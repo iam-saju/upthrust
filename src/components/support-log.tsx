@@ -142,12 +142,15 @@ export function SupportLog() {
   };
 
   if (isServer) {
-    const firstExchange = EXCHANGES[0];
     return (
       <div aria-hidden className="support-log">
         <div className="support-exchange">
-          <p className="support-customer">{firstExchange.customer}</p>
-          <p className="support-agent">{firstExchange.agent}</p>
+          <p className="support-customer" style={{ opacity: 0 }}>
+            <span style={{ display: "inline-block", width: "8em", height: "1em", background: "rgba(0,0,0,0.06)", borderRadius: "2px" }} />
+          </p>
+          <p className="support-agent" style={{ opacity: 0 }}>
+            <span style={{ display: "inline-block", width: "12em", height: "1em", background: "rgba(0,0,0,0.06)", borderRadius: "2px" }} />
+          </p>
         </div>
       </div>
     );

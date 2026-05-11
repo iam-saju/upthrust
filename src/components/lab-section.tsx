@@ -10,7 +10,7 @@ export function LabSection({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="mb-20 md:mb-40 scroll-mt-8 last:mb-0">
+    <section id={id} className="mb-14 md:mb-24 scroll-mt-8 last:mb-0">
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24 gap-y-4 items-start">
         <p className="text-[13px] md:text-[15px] text-neutral-500 md:pt-[0.3em] tracking-[0.02em]">
           {label}
