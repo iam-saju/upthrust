@@ -60,7 +60,7 @@ export default function Home() {
         </div>
 
         {/* ── Documentary image ────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 py-10 sm:py-14 md:py-20">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div className="documentary-frame relative w-full max-w-xl aspect-4/3 md:aspect-3/2 overflow-hidden bg-neutral-200">
@@ -78,7 +78,7 @@ export default function Home() {
         </div>
 
         {/* ── Support transcript ──────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pb-10 sm:pb-14 md:pb-20">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div>
@@ -88,7 +88,7 @@ export default function Home() {
         </div>
 
         {/* ── Agents + Mission ────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-12 md:pt-16 pb-10 md:pb-12">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-10 sm:pt-14 md:pt-20 pb-12 sm:pb-16 md:pb-20">
           <LabSection id="agents" label="Our Agents">
             <div>
               <div className="max-w-xl space-y-6">
@@ -139,7 +139,7 @@ export default function Home() {
                   </span>
                 </a>
                 <a
-                  href="mailto:hello@buoyancylabs.example"
+                  href="mailto:iamsajubabu@gmail.com"
                   className="group inline-flex items-center gap-2 text-[14px] text-neutral-500/65 transition-all duration-200 hover:text-neutral-900 hover:translate-x-0.5 focus:outline-none"
                 >
                   Get in touch
