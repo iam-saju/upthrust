@@ -72,6 +72,16 @@ export default function Home() {
           </div>
         </div>
 
+        {/* ── Support transcript ──────────────────────────────── */}
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
+            <div className="hidden md:block" />
+            <div>
+              <SupportLog />
+            </div>
+          </div>
+        </div>
+
         {/* ── Agents + Mission ────────────────────────────────── */}
         <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-20 md:pt-28 pb-12 md:pb-16">
           <LabSection id="agents" label="Our Agents">
@@ -83,7 +93,6 @@ export default function Home() {
                   callbacks, and small doubts.
                 </p>
               </div>
-              <SupportLog />
               <div className="max-w-xl space-y-2 text-neutral-800 pt-6">
                 <p>No stiff scripts.</p>
                 <p>No awkward translations.</p>
