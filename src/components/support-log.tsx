@@ -42,7 +42,6 @@ export function SupportLog() {
   const isServer = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [visibleChars, setVisibleChars] = useState(0);
-  const [isListening, setIsListening] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   const cancelledRef = useRef(false);
@@ -66,7 +65,7 @@ export function SupportLog() {
     indexRef.current = pickRandom(-1);
 
     const LISTEN_TIME = 900;
-    const CHAR_DELAY = 55;
+    const CHAR_DELAY = 60;
     const HOLD_TIME = 3000;
     const FADE_OUT_TIME = 600;
 
@@ -82,22 +81,22 @@ export function SupportLog() {
 
       let charIndex = 0;
       setVisibleChars(0);
-      setIsListening(true);
       setIsFadingOut(false);
 
-      // Listening pause with dots
+      // Human pause before responding
       timeoutRef.current = setTimeout(() => {
         if (cancelledRef.current) return;
-        setIsListening(false);
 
-        // Start typing agent response
+        // Start typing agent response letter by letter
         function revealNextChar(): void {
           if (cancelledRef.current) return;
 
           if (charIndex < agentGraphemes.length) {
             setVisibleChars(charIndex + 1);
             charIndex++;
-            timeoutRef.current = setTimeout(revealNextChar, CHAR_DELAY);
+            // Slightly variable timing for human feel
+            const hesitation = Math.random() < 0.1 ? 80 : 0;
+            timeoutRef.current = setTimeout(revealNextChar, CHAR_DELAY + hesitation);
           } else {
             // Hold after complete
             timeoutRef.current = setTimeout(() => {
@@ -167,18 +166,7 @@ export function SupportLog() {
     >
       <div className="support-exchange">
         <p className="support-customer">{'\u201C'}{currentExchange.customer}{'\u201D'}</p>
-        <p className="support-agent">
-          <span style={{ marginLeft: 8, display: "inline-block" }}>
-            {renderAgentChars()}
-            {isListening && (
-              <span className="support-loading">
-                <span style={{ animationDelay: "0ms" }}>.</span>
-                <span style={{ animationDelay: "150ms" }}>.</span>
-                <span style={{ animationDelay: "300ms" }}>.</span>
-              </span>
-            )}
-          </span>
-        </p>
+        <p className="support-agent">{renderAgentChars()}</p>
       </div>
     </div>
   );

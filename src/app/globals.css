@@ -100,8 +100,10 @@ body::after {
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
-    padding-left: 18px;
-    border-left: 1px solid rgba(17, 17, 17, 0.08);
+    background: rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 12px;
+    padding: 24px;
     margin-top: 32px;
     margin-bottom: 36px;
     max-width: 420px;
@@ -113,45 +115,36 @@ body::after {
 .support-exchange {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 18px;
     width: 100%;
 }
 
 .support-customer {
     font-family:
-        "SF Pro Text", -apple-system, BlinkMacSystemFont,
-        "Segoe UI", sans-serif;
+        -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 15px;
-    line-height: 1.8;
+    line-height: 1.7;
     font-weight: 400;
-    font-style: italic;
-    color: rgba(17, 17, 17, 0.34);
+    color: rgba(17, 17, 17, 0.45);
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .support-agent {
     font-family:
         -apple-system, BlinkMacSystemFont, "SF Pro Text",
-        "Segoe UI", sans-serif;
-    font-size: 17px;
-    line-height: 1.9;
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
     font-weight: 400;
-    letter-spacing: -0.02em;
-    color: rgba(17, 17, 17, 0.88);
+    letter-spacing: -0.01em;
+    color: rgba(17, 17, 17, 0.85);
+    min-height: 28px;
 }
 
 .support-char {
     will-change: opacity, transform, filter;
-}
-
-.support-loading span {
-    display: inline-block;
-    animation: support-loading-pulse 1s ease-in-out infinite;
-    opacity: 0.3;
-}
-
-@keyframes support-loading-pulse {
-    0%, 100% { opacity: 0.2; }
-    50% { opacity: 0.6; }
 }
 
 
