@@ -12,7 +12,9 @@ export default function Home() {
           <LabSection id="belief" label="Our Belief">
             <div>
               <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug max-w-xl">
-                Support should sound like your{" "}
+                Support should sound like
+                <br className="md:hidden" />
+                {" "}your{" "}
                 <VoiceTyping
                   words={[
                     "shopkeeper",
@@ -107,12 +109,12 @@ export default function Home() {
                 </p>
                 <p>A new voice layer for Indian businesses.</p>
               </div>
-              <div className="flex flex-col gap-[18px] pt-4 items-start sm:flex-row sm:items-center sm:gap-6">
+              <div className="flex flex-col gap-7 pt-4 items-start sm:flex-row sm:items-center">
                 <a
                   href="https://airtable.com/app2EGU9ub0BLp6Oc/pagsJL8j96QTLjXCC/form"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group inline-flex items-center gap-2 border border-[#111] bg-transparent text-[#111] px-6 py-3 text-[15px] tracking-[-0.02em] transition-all duration-250 hover:bg-[#111] hover:text-[#f5f1ea] hover:-translate-y-px w-fit"
+                  className="group inline-flex items-center gap-2 bg-transparent border border-black/14 text-[#111] rounded-sm py-3.5 px-5.5 text-[14px] transition-all duration-200 hover:bg-[#111] hover:text-[#f5f5f5] hover:border-[#111] focus:outline-none"
                 >
                   Request demo access
                   <span
@@ -124,7 +126,7 @@ export default function Home() {
                 </a>
                 <a
                   href="mailto:hello@buoyancylabs.example"
-                  className="group inline-flex items-center gap-2 text-[15px] text-neutral-500 underline decoration-neutral-400 underline-offset-[3px] transition-colors hover:text-neutral-900"
+                  className="group inline-flex items-center gap-2 text-[14px] text-neutral-500/65 transition-all duration-200 hover:text-neutral-900 hover:translate-x-0.5 focus:outline-none"
                 >
                   Get in touch
                   <span
