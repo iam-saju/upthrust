@@ -110,6 +110,24 @@ body::after {
     align-items: center;
 }
 
+.support-exchange {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.support-customer {
+    font-family:
+        "SF Pro Text", -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.8;
+    font-weight: 400;
+    font-style: italic;
+    color: rgba(17, 17, 17, 0.34);
+}
+
 .support-agent {
     font-family:
         -apple-system, BlinkMacSystemFont, "SF Pro Text",
@@ -119,6 +137,7 @@ body::after {
     font-weight: 400;
     letter-spacing: -0.02em;
     color: rgba(17, 17, 17, 0.88);
+    margin-left: 8px;
 }
 
 .support-word {

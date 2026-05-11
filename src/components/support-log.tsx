@@ -3,18 +3,18 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 
 const EXCHANGES = [
-  "24 മണിക്കൂറിനുള്ളിൽ ക്രെഡിറ്റ് ആവുമ്മാ.",
-  "ഒരു മിനിറ്റ്, റീസെൻഡ് ചെയ്യാം.",
-  "செக் பண்ணிட்டு கால் பண்ணறேன் சார்.",
-  "நான் லைன்ல இருக்கேன், சொல்லுங்க.",
-  "रिफंड शुरू कर दिया है सर.",
-  "एक मिनट, फिर से भेजता हूँ.",
-  "ఒక్కసారి రీసెండ్ చేస్తాను సార్.",
-  "చెక్ చేసి అప్డేట్ చెప్తాను మేడమ్.",
-  "24 hours ullil credit aavum ma'am.",
-  "check pannitu call back panren sir.",
-  "refund already initiate kar diya hai.",
-  "okasari resend chesthanu sir.",
+  { customer: "റീഫണ്ട് കിട്ടിയില്ല.", agent: "24 മണിക്കൂറിനുള്ളിൽ ക്രെഡിറ്റ് ആവുമ്മാ." },
+  { customer: "OTP വന്നില്ല.", agent: "ഒരു മിനിറ്റ്, റീസെൻഡ് ചെയ്യാം." },
+  { customer: "பார்சல் இன்னும் வரல.", agent: "செக் பண்ணிட்டு கால் பண்ணறேன் சார்." },
+  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் லைன்ல இருக்கேன், சொல்லுங்க." },
+  { customer: "पेमेंट कट गया.", agent: "रिफंड शुरू कर दिया है सर." },
+  { customer: "OTP नहीं आया.", agent: "एक मिनट, फिर से भेजता हूँ." },
+  { customer: "OTP రాలేదు.", agent: "ఒక్కసారి రీసెండ్ చేస్తాను సార్." },
+  { customer: "డెలివరీ ఇంకా రాలేదు.", agent: "చెక్ చేసి అప్డేట్ చెప్తాను మేడమ్." },
+  { customer: "refund kittiyilla.", agent: "24 hours ullil credit aavum ma'am." },
+  { customer: "parcel innum varala.", agent: "check pannitu call back panren sir." },
+  { customer: "payment deduct ho gaya.", agent: "refund already initiate kar diya hai." },
+  { customer: "OTP raaledu.", agent: "okasari resend chesthanu sir." },
 ];
 
 const emptySubscribe = () => () => {};
@@ -51,7 +51,7 @@ export function SupportLog() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentExchange = EXCHANGES[currentIndex];
-  const agentWords = toWords(currentExchange);
+  const agentWords = toWords(currentExchange.agent);
 
   const initializedRef = useRef(false);
 
@@ -138,16 +138,20 @@ export function SupportLog() {
   };
 
   if (isServer) {
-    const firstWords = toWords(EXCHANGES[0]);
+    const firstExchange = EXCHANGES[0];
+    const firstWords = toWords(firstExchange.agent);
     return (
       <div aria-hidden className="support-log">
-        <p className="support-agent">
-          {firstWords.map((word, i) => (
-            <span key={i} className="support-word" style={{ marginRight: "0.25em" }}>
-              {word}
-            </span>
-          ))}
-        </p>
+        <div className="support-exchange">
+          <p className="support-customer">{'\u201C'}{firstExchange.customer}{'\u201D'}</p>
+          <p className="support-agent">
+            {firstWords.map((word, i) => (
+              <span key={i} className="support-word" style={{ marginRight: "0.25em" }}>
+                {word}
+              </span>
+            ))}
+          </p>
+        </div>
       </div>
     );
   }
@@ -161,7 +165,10 @@ export function SupportLog() {
         transition: "opacity 600ms ease-out",
       }}
     >
-      <p className="support-agent">{renderAgentWords()}</p>
+      <div className="support-exchange">
+        <p className="support-customer">{'\u201C'}{currentExchange.customer}{'\u201D'}</p>
+        <p className="support-agent">{renderAgentWords()}</p>
+      </div>
     </div>
   );
 }
