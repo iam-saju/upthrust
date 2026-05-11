@@ -3,9 +3,10 @@
 @theme inline {
     --font-serif: ui-serif, Georgia, "Times New Roman", serif;
     --font-indic-display:
-        "Kohinoor Devanagari", "Tiro Devanagari Hindi", "Noto Serif Devanagari",
+        ui-sans-serif, system-ui, -apple-system, "Noto Sans Devanagari",
+        "Kohinoor Devanagari", "Tiro Devanagari Hindi",
         "Tamil Sangam MN", "Gujarati Sangam MN", "Kannada MN", "Malayalam MN",
-        "Palatino Linotype", Georgia, serif;
+        "Segoe UI", sans-serif;
     --color-canopy-accent: #c45c26;
 }
 
@@ -196,16 +197,6 @@ body::after {
 .ink-spread {
     text-shadow: 0 0 0.4px rgba(23, 23, 23, 0.15);
     letter-spacing: 0.09em;
-}
-
-.text-highlight {
-    font-weight: 500;
-    color: #111;
-    background: rgba(196, 92, 38, 0.08);
-    padding: 0 4px;
-    border-radius: 3px;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
 }
 
 .worn-edge {
