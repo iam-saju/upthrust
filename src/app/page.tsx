@@ -42,7 +42,7 @@ export default function Home() {
               <div className="max-w-xl space-y-6">
                 <p>
                   At{" "}
-                  <strong className="font-medium text-neutral-950">
+                  <strong className="text-highlight">
                     Buoyancy Labs
                   </strong>
                   , we are building voice AI that understands how Indians
