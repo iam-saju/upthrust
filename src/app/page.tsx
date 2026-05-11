@@ -98,7 +98,7 @@ export default function Home() {
               <p>
                 When support feels familiar, a business stops feeling distant.
               </p>
-              <div className="space-y-2 text-neutral-800">
+              <div className="space-y-1.5 text-neutral-800">
                 <p>This is more than AI.</p>
                 <p>
                   <strong className="font-medium text-neutral-950">
@@ -107,12 +107,12 @@ export default function Home() {
                 </p>
                 <p>A new voice layer for Indian businesses.</p>
               </div>
-              <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:gap-6">
+              <div className="flex flex-col gap-[18px] pt-4 items-start sm:flex-row sm:items-center sm:gap-6">
                 <a
                   href="https://airtable.com/app2EGU9ub0BLp6Oc/pagsJL8j96QTLjXCC/form"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group inline-flex items-center gap-2 border border-neutral-300 px-5 py-2.5 text-[15px] text-neutral-900 transition-colors hover:bg-neutral-950 hover:text-white hover:border-neutral-950"
+                  className="group inline-flex items-center gap-2 border border-[#111] bg-transparent text-[#111] px-6 py-3 text-[15px] tracking-[-0.02em] transition-all duration-250 hover:bg-[#111] hover:text-[#f5f1ea] hover:-translate-y-px w-fit"
                 >
                   Request demo access
                   <span
@@ -124,7 +124,7 @@ export default function Home() {
                 </a>
                 <a
                   href="mailto:hello@buoyancylabs.example"
-                  className="group inline-flex items-center gap-2 text-[15px] text-neutral-600 transition-colors hover:text-neutral-900"
+                  className="group inline-flex items-center gap-2 text-[15px] text-neutral-500 underline decoration-neutral-400 underline-offset-[3px] transition-colors hover:text-neutral-900"
                 >
                   Get in touch
                   <span
