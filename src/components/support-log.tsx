@@ -3,16 +3,24 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 
 const EXCHANGES = [
-  { customer: "Refund കിട്ടിയില്ല.", agent: "24 hours ഉള്ളിൽ credit ആവും ma'am." },
-  { customer: "Parcel இன்னும் வரல.", agent: "Hub la iruku sir, today deliver ஆகிடும்." },
-  { customer: "Payment deduct ho gaya but order confirm nahi hua.", agent: "Amount hold pe hai sir, automatically reverse ho jayega." },
-  { customer: "OTP ఇంకా రాలేదు.", agent: "Network slow ఉంది ma'am, resend chesthanu." },
-  { customer: "പ്രൊഡക്ട് ഡാമേജ് ആയി വന്നു.", agent: "Photo അയച്ചാൽ replacement arrange ചെയ്യാം." },
-  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் இன்னும் lineல இருக்கேன் sir, சொல்லுங்க." },
-  { customer: "Address galat update ho gaya.", agent: "Tension mat lijiye, delivery se pehle change kar deta hoon." },
-  { customer: "Delivery chaala late ayyindi.", agent: "Rider nearby unnadu sir, 10 minutes lo reach avthadu." },
-  { customer: "Tracking update আসছে না.", agent: "Courier side delay ache, ami check kore bolchi." },
-  { customer: "Can I speak to a real person?", agent: "I'll connect you to our support lead right away." },
+  { customer: "റീഫണ്ട് കിട്ടിയില്ല.", agent: "റീഫണ്ട് initiate ചെയ്തിട്ടുണ്ട് ma'am." },
+  { customer: "OTP വന്നില്ല.", agent: "ഒരു മിനിറ്റ്, resend ചെയ്യാം." },
+  { customer: "refund kittiyilla.", agent: "24 hours ullil credit aavum." },
+  { customer: "tracking update vannilla.", agent: "rider nearby undu sir." },
+  { customer: "பார்சல் இன்னும் வரல.", agent: "இன்னைக்கு deliver ஆகிடும் ma'am." },
+  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் lineல இருக்கேன் சொல்லுங்க." },
+  { customer: "payment twice deduct ஆயிடுச்சு.", agent: "refund process start panniyachu sir." },
+  { customer: "app open ஆகல.", agent: "update pannitu once try pannunga." },
+  { customer: "पेमेंट कट गया.", agent: "रिफंड शुरू कर दिया है sir." },
+  { customer: "OTP नहीं आया.", agent: "एक मिनट, फिर से भेजता हूँ." },
+  { customer: "address galat update ho gaya.", agent: "delivery se pehle correct kar deta hoon." },
+  { customer: "delivery bahut late hai.", agent: "rider nearby hai ma'am." },
+  { customer: "డెలివరీ ఇంకా రాలేదు.", agent: "చెక్ చేసి update చెప్తాను." },
+  { customer: "OTP రాలేదు.", agent: "ఒక్కసారి resend చేస్తాను sir." },
+  { customer: "payment rendu saarlu cut ayyindi.", agent: "refund already initiate ayyindi." },
+  { customer: "call disconnect ayyindi.", agent: "line lo ne unnanu ma'am." },
+  { customer: "order ekhono arrive hoyni.", agent: "check kore update dicchi." },
+  { customer: "payment cut ಆಗಿದೆ.", agent: "refund process start ಮಾಡಿದ್ದೇವೆ sir." },
 ];
 
 const emptySubscribe = () => () => {};
