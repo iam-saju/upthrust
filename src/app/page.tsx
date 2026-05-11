@@ -60,7 +60,7 @@ export default function Home() {
         </div>
 
         {/* ── Documentary image ────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 py-10 sm:py-14 md:py-20">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-6 sm:mt-8 md:mt-10 mb-2 sm:mb-3 md:mb-4">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div className="documentary-frame relative w-full max-w-xl aspect-4/3 md:aspect-3/2 overflow-hidden bg-neutral-200">
@@ -78,7 +78,7 @@ export default function Home() {
         </div>
 
         {/* ── Support transcript ──────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pb-10 sm:pb-14 md:pb-20">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-2 sm:pt-3 md:pt-4 pb-8 sm:pb-10 md:pb-12">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div>
