@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+@theme inline {
+    --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+    --font-indic-display:
+        "Kohinoor Devanagari", "Tiro Devanagari Hindi", "Noto Serif Devanagari",
+        "Tamil Sangam MN", "Gujarati Sangam MN", "Kannada MN", "Malayalam MN",
+        "Palatino Linotype", Georgia, serif;
+    --color-canopy-accent: #c45c26;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+    background-color: #e8e8e8;
+}
+
+/* ─── Page-wide paper grain ─────────────────────────────────────────────── */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.032;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+}
+
+.brand-accent {
+    font-family: "Hoefler Text", "Baskerville", "Palatino Linotype", "Palatino", Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    text-rendering: geometricPrecision;
+    display: inline-block;
+    padding-bottom: 0.5rem;
+}
+
+/* ─── Voice typing layer ──────────────────────────────────────────────────── */
+.voice-layer {
+    position: relative;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    letter-spacing: 0.02em;
+    color: rgba(23, 23, 23, 0.55);
+    min-height: 1.55em;
+}
+
+.voice-layer--large {
+    font-size: 24px;
+    line-height: 1.4;
+    color: rgba(23, 23, 23, 0.4);
+    letter-spacing: 0.04em;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.voice-layer--inline {
+    position: static;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+    min-height: auto;
+}
+
+.voice-layer--accent {
+    font-family: var(--font-indic-display);
+    font-style: italic;
+    font-weight: 500;
+    color: rgba(23, 23, 23, 0.88);
+}
+
+.voice-cursor {
+    display: inline-block;
+    opacity: 0.45;
+    animation: cursor-blink 1.1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ─── Support log (single-line cycling) ───────────────────────────────────── */
+.support-log {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    font-family:
+        "Kohinoor Devanagari", "Tiro Devanagari Hindi", "Noto Serif Devanagari",
+        "Tamil Sangam MN", "Gujarati Sangam MN", "Kannada MN", "Malayalam MN",
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Georgia, serif;
+    font-size: 20px;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    color: rgba(23, 23, 23, 0.38);
+    height: 2em;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    padding-top: 1.5rem;
+    padding-bottom: 0.75rem;
+}
+
+
+.thermal-fade::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background: linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.6) 0%,
+        transparent 20%,
+        transparent 80%,
+        rgba(255, 255, 255, 0.6) 100%
+    );
+}
+
+.ink-spread {
+    text-shadow: 0 0 0.4px rgba(23, 23, 23, 0.15);
+    letter-spacing: 0.09em;
+}
+
+.worn-edge {
+    border-radius: 0 0 2px 0;
+    box-shadow: inset -1px -1px 3px rgba(0, 0, 0, 0.06);
+}
+
