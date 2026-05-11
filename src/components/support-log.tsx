@@ -3,14 +3,18 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 
 const EXCHANGES = [
-  { customer: "refund process aaguthu?", agent: "haan sir, initiated." },
-  { customer: "call cut aayiduchu…", agent: "naan line la iruken sir." },
-  { customer: "OTP vannilla.", agent: "oru minute chetta, resend cheyyam." },
-  { customer: "payment deduct ho gaya.", agent: "refund 24 hours mein aa jayega." },
-  { customer: "order ta ekhono asheni.", agent: "check kore bolchi dada." },
-  { customer: "sir OTP vannille…", agent: "resend cheythu chetta." },
-  { customer: "tracking number ethra?", agent: "share cheyyam sir." },
-  { customer: "product damage aayittund.", agent: "photo ayakkam ma'am." },
+  { customer: "റീഫണ്ട് കിട്ടിയില്ല.", agent: "24 മണിക്കൂറിനുള്ളിൽ ക്രെഡിറ്റ് ആവുമ്മാ." },
+  { customer: "OTP വന്നില്ല.", agent: "ഒരു മിനിറ്റ്, റീസെൻഡ് ചെയ്യാം." },
+  { customer: "பார்சல் இன்னும் வரல.", agent: "செக் பண்ணிட்டு கால் பண்ணறேன் சார்." },
+  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் லைன்ல இருக்கேன், சொல்லுங்க." },
+  { customer: "पेमेंट कट गया.", agent: "रिफंड शुरू कर दिया है सर." },
+  { customer: "OTP नहीं आया.", agent: "एक मिनट, फिर से भेजता हूँ." },
+  { customer: "OTP రాలేదు.", agent: "ఒక్కసారి రీసెండ్ చేస్తాను సార్." },
+  { customer: "డెలివరీ ఇంకా రాలేదు.", agent: "చెక్ చేసి అప్డేట్ చెప్తాను మేడమ్." },
+  { customer: "refund kittiyilla.", agent: "24 hours ullil credit aavum ma'am." },
+  { customer: "parcel innum varala.", agent: "check pannitu call back panren sir." },
+  { customer: "payment deduct ho gaya.", agent: "refund already initiate kar diya hai." },
+  { customer: "OTP raaledu.", agent: "okasari resend chesthanu sir." },
 ];
 
 const emptySubscribe = () => () => {};
@@ -62,8 +66,8 @@ export function SupportLog() {
     cancelledRef.current = false;
     indexRef.current = pickRandom(-1);
 
-    const INITIAL_DELAY = 400;
-    const WORD_DELAY = 120;
+    const INITIAL_DELAY = 800;
+    const WORD_DELAY = 140;
     const HOLD_TIME = 3000;
     const FADE_OUT_TIME = 600;
 
@@ -121,8 +125,9 @@ export function SupportLog() {
         className="support-word"
         style={{
           opacity: index < visibleWords ? 1 : 0,
-          transform: index < visibleWords ? "translateY(0)" : "translateY(2px)",
-          transition: `opacity 400ms ease-out, transform 400ms ease-out`,
+          transform: index < visibleWords ? "translateY(0)" : "translateY(4px)",
+          filter: index < visibleWords ? "blur(0)" : "blur(2px)",
+          transition: "opacity 220ms ease, transform 220ms ease, filter 220ms ease",
           display: "inline-block",
           marginRight: "0.25em",
         }}
