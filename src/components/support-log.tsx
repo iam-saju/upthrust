@@ -138,7 +138,7 @@ export function SupportLog() {
     return (
       <div aria-hidden className="support-log">
         <div className="support-exchange">
-          <p className="support-customer">{'\u201C'}{firstExchange.customer}{'\u201D'}</p>
+          <p className="support-customer">{firstExchange.customer}</p>
           <p className="support-agent">{firstExchange.agent}</p>
         </div>
       </div>
@@ -155,7 +155,7 @@ export function SupportLog() {
       }}
     >
       <div className="support-exchange">
-        <p className="support-customer">{'\u201C'}{currentExchange.customer}{'\u201D'}</p>
+        <p className="support-customer">{currentExchange.customer}</p>
         <p className="support-agent">{renderAgentWords()}</p>
       </div>
     </div>
