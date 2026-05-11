@@ -3,18 +3,16 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 
 const EXCHANGES = [
-  { customer: "റീഫണ്ട് കിട്ടിയില്ല.", agent: "24 മണിക്കൂറിനുള്ളിൽ ക്രെഡിറ്റ് ആവുമ്മാ." },
-  { customer: "OTP വന്നില്ല.", agent: "ഒരു മിനിറ്റ്, റീസെൻഡ് ചെയ്യാം." },
-  { customer: "பார்சல் இன்னும் வரல.", agent: "செக் பண்ணிட்டு கால் பண்ணறேன் சார்." },
-  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் லைன்ல இருக்கேன், சொல்லுங்க." },
-  { customer: "पेमेंट कट गया.", agent: "रिफंड शुरू कर दिया है सर." },
-  { customer: "OTP नहीं आया.", agent: "एक मिनट, फिर से भेजता हूँ." },
-  { customer: "OTP రాలేదు.", agent: "ఒక్కసారి రీసెండ్ చేస్తాను సార్." },
-  { customer: "డెలివరీ ఇంకా రాలేదు.", agent: "చెక్ చేసి అప్డేట్ చెప్తాను మేడమ్." },
-  { customer: "refund kittiyilla.", agent: "24 hours ullil credit aavum ma'am." },
-  { customer: "parcel innum varala.", agent: "check pannitu call back panren sir." },
-  { customer: "payment deduct ho gaya.", agent: "refund already initiate kar diya hai." },
-  { customer: "OTP raaledu.", agent: "okasari resend chesthanu sir." },
+  { customer: "Refund കിട്ടിയില്ല.", agent: "24 hours ഉള്ളിൽ credit ആവും ma'am." },
+  { customer: "Parcel இன்னும் வரல.", agent: "Hub la iruku sir, today deliver ஆகிடும்." },
+  { customer: "Payment deduct ho gaya but order confirm nahi hua.", agent: "Amount hold pe hai sir, automatically reverse ho jayega." },
+  { customer: "OTP ఇంకా రాలేదు.", agent: "Network slow ఉంది ma'am, resend chesthanu." },
+  { customer: "പ്രൊഡക്ട് ഡാമേജ് ആയി വന്നു.", agent: "Photo അയച്ചാൽ replacement arrange ചെയ്യാം." },
+  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் இன்னும் lineல இருக்கேன் sir, சொல்லுங்க." },
+  { customer: "Address galat update ho gaya.", agent: "Tension mat lijiye, delivery se pehle change kar deta hoon." },
+  { customer: "Delivery chaala late ayyindi.", agent: "Rider nearby unnadu sir, 10 minutes lo reach avthadu." },
+  { customer: "Tracking update আসছে না.", agent: "Courier side delay ache, ami check kore bolchi." },
+  { customer: "Can I speak to a real person?", agent: "I'll connect you to our support lead right away." },
 ];
 
 const emptySubscribe = () => () => {};
@@ -83,22 +81,18 @@ export function SupportLog() {
       setVisibleChars(0);
       setIsFadingOut(false);
 
-      // Human pause before responding
       timeoutRef.current = setTimeout(() => {
         if (cancelledRef.current) return;
 
-        // Start typing agent response letter by letter
         function revealNextChar(): void {
           if (cancelledRef.current) return;
 
           if (charIndex < agentGraphemes.length) {
             setVisibleChars(charIndex + 1);
             charIndex++;
-            // Slightly variable timing for human feel
             const hesitation = Math.random() < 0.1 ? 80 : 0;
             timeoutRef.current = setTimeout(revealNextChar, CHAR_DELAY + hesitation);
           } else {
-            // Hold after complete
             timeoutRef.current = setTimeout(() => {
               if (cancelledRef.current) return;
               setIsFadingOut(true);
