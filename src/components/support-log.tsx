@@ -21,14 +21,12 @@ const emptySubscribe = () => () => {};
 function getSnapshot() { return false; }
 function getServerSnapshot() { return true; }
 
-function toWords(text: string): string[] {
+function toGraphemes(text: string): string[] {
   try {
-    const segmenter = new Intl.Segmenter("en", { granularity: "word" });
-    return [...segmenter.segment(text)]
-      .filter((s) => s.isWordLike)
-      .map((s) => s.segment);
+    const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+    return [...segmenter.segment(text)].map((s) => s.segment);
   } catch {
-    return text.split(/\s+/);
+    return Array.from(text);
   }
 }
 
@@ -43,7 +41,8 @@ function pickRandom(exclude: number): number {
 export function SupportLog() {
   const isServer = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [visibleWords, setVisibleWords] = useState(0);
+  const [visibleChars, setVisibleChars] = useState(0);
+  const [isListening, setIsListening] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   const cancelledRef = useRef(false);
@@ -51,7 +50,7 @@ export function SupportLog() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentExchange = EXCHANGES[currentIndex];
-  const agentWords = toWords(currentExchange.agent);
+  const agentGraphemes = toGraphemes(currentExchange.agent);
 
   const initializedRef = useRef(false);
 
@@ -66,8 +65,8 @@ export function SupportLog() {
     cancelledRef.current = false;
     indexRef.current = pickRandom(-1);
 
-    const INITIAL_DELAY = 900;
-    const WORD_DELAY = 140;
+    const LISTEN_TIME = 900;
+    const CHAR_DELAY = 55;
     const HOLD_TIME = 3000;
     const FADE_OUT_TIME = 600;
 
@@ -78,39 +77,48 @@ export function SupportLog() {
       }
     }
 
-    function animateWords(): void {
+    function animateResponse(): void {
       if (cancelledRef.current) return;
 
-      let wordIndex = 0;
-      setVisibleWords(0);
+      let charIndex = 0;
+      setVisibleChars(0);
+      setIsListening(true);
       setIsFadingOut(false);
 
-      function revealNextWord(): void {
+      // Listening pause with dots
+      timeoutRef.current = setTimeout(() => {
         if (cancelledRef.current) return;
+        setIsListening(false);
 
-        if (wordIndex < agentWords.length) {
-          setVisibleWords(wordIndex + 1);
-          wordIndex++;
-          timeoutRef.current = setTimeout(revealNextWord, WORD_DELAY);
-        } else {
-          timeoutRef.current = setTimeout(() => {
-            if (cancelledRef.current) return;
-            setIsFadingOut(true);
+        // Start typing agent response
+        function revealNextChar(): void {
+          if (cancelledRef.current) return;
+
+          if (charIndex < agentGraphemes.length) {
+            setVisibleChars(charIndex + 1);
+            charIndex++;
+            timeoutRef.current = setTimeout(revealNextChar, CHAR_DELAY);
+          } else {
+            // Hold after complete
             timeoutRef.current = setTimeout(() => {
               if (cancelledRef.current) return;
-              const nextIndex = pickRandom(indexRef.current);
-              indexRef.current = nextIndex;
-              setCurrentIndex(nextIndex);
-              timeoutRef.current = setTimeout(animateWords, INITIAL_DELAY);
-            }, FADE_OUT_TIME);
-          }, HOLD_TIME);
+              setIsFadingOut(true);
+              timeoutRef.current = setTimeout(() => {
+                if (cancelledRef.current) return;
+                const nextIndex = pickRandom(indexRef.current);
+                indexRef.current = nextIndex;
+                setCurrentIndex(nextIndex);
+                timeoutRef.current = setTimeout(animateResponse, 100);
+              }, FADE_OUT_TIME);
+            }, HOLD_TIME);
+          }
         }
-      }
 
-      timeoutRef.current = setTimeout(revealNextWord, INITIAL_DELAY);
+        revealNextChar();
+      }, LISTEN_TIME);
     }
 
-    timeoutRef.current = setTimeout(animateWords, INITIAL_DELAY);
+    animateResponse();
 
     return () => {
       cancelledRef.current = true;
@@ -118,39 +126,31 @@ export function SupportLog() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const renderAgentWords = () => {
-    return agentWords.map((word, index) => (
+  const renderAgentChars = () => {
+    return agentGraphemes.map((char, index) => (
       <span
         key={index}
-        className="support-word"
+        className="support-char"
         style={{
-          opacity: index < visibleWords ? 1 : 0,
-          transform: index < visibleWords ? "translateY(0)" : "translateY(3px)",
-          filter: index < visibleWords ? "blur(0)" : "blur(3px)",
+          opacity: index < visibleChars ? 1 : 0,
+          transform: index < visibleChars ? "translateY(0)" : "translateY(3px)",
+          filter: index < visibleChars ? "blur(0)" : "blur(3px)",
           transition: "opacity 260ms cubic-bezier(.22,.61,.36,1), transform 260ms cubic-bezier(.22,.61,.36,1), filter 260ms cubic-bezier(.22,.61,.36,1)",
           display: "inline-block",
-          marginRight: "0.25em",
         }}
       >
-        {word}
+        {char}
       </span>
     ));
   };
 
   if (isServer) {
     const firstExchange = EXCHANGES[0];
-    const firstWords = toWords(firstExchange.agent);
     return (
       <div aria-hidden className="support-log">
         <div className="support-exchange">
           <p className="support-customer">{'\u201C'}{firstExchange.customer}{'\u201D'}</p>
-          <p className="support-agent">
-            {firstWords.map((word, i) => (
-              <span key={i} className="support-word" style={{ marginRight: "0.25em" }}>
-                {word}
-              </span>
-            ))}
-          </p>
+          <p className="support-agent">{firstExchange.agent}</p>
         </div>
       </div>
     );
@@ -167,7 +167,18 @@ export function SupportLog() {
     >
       <div className="support-exchange">
         <p className="support-customer">{'\u201C'}{currentExchange.customer}{'\u201D'}</p>
-        <p className="support-agent">{renderAgentWords()}</p>
+        <p className="support-agent">
+          <span style={{ marginLeft: 8, display: "inline-block" }}>
+            {renderAgentChars()}
+            {isListening && (
+              <span className="support-loading">
+                <span style={{ animationDelay: "0ms" }}>.</span>
+                <span style={{ animationDelay: "150ms" }}>.</span>
+                <span style={{ animationDelay: "300ms" }}>.</span>
+              </span>
+            )}
+          </span>
+        </p>
       </div>
     </div>
   );

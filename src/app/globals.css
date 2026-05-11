@@ -95,7 +95,7 @@ body::after {
     50% { opacity: 0; }
 }
 
-/* ─── Support log (word-by-word conversation) ────────────────────────────── */
+/* ─── Support log (conversation snippet) ─────────────────────────────────── */
 .support-log {
     pointer-events: none;
     user-select: none;
@@ -113,7 +113,7 @@ body::after {
 .support-exchange {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 14px;
     width: 100%;
 }
 
@@ -137,11 +137,21 @@ body::after {
     font-weight: 400;
     letter-spacing: -0.02em;
     color: rgba(17, 17, 17, 0.88);
-    margin-left: 8px;
 }
 
-.support-word {
+.support-char {
     will-change: opacity, transform, filter;
+}
+
+.support-loading span {
+    display: inline-block;
+    animation: support-loading-pulse 1s ease-in-out infinite;
+    opacity: 0.3;
+}
+
+@keyframes support-loading-pulse {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.6; }
 }
 
 
