@@ -116,7 +116,7 @@ export function SupportLog() {
       cancelledRef.current = true;
       clearCurrentTimeout();
     };
-  }, [agentWords.length]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderAgentWords = () => {
     return agentWords.map((word, index) => (
