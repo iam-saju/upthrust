@@ -3,18 +3,18 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 
 const EXCHANGES = [
-  { customer: "റീഫണ്ട് കിട്ടിയില്ല.", agent: "24 മണിക്കൂറിനുള്ളിൽ ക്രെഡിറ്റ് ആവുമ്മാ.", language: "Malayalam" },
-  { customer: "OTP വന്നില്ല.", agent: "ഒരു മിനിറ്റ്, റീസെൻഡ് ചെയ്യാം.", language: "Malayalam" },
-  { customer: "பார்சல் இன்னும் வரல.", agent: "செக் பண்ணிட்டு கால் பண்ணறேன் சார்.", language: "Tamil" },
-  { customer: "கால் கட் ஆயிடுச்சு.", agent: "நான் லைன்ல இருக்கேன், சொல்லுங்க.", language: "Tamil" },
-  { customer: "पेमेंट कट गया.", agent: "रिफंड शुरू कर दिया है सर.", language: "Hindi" },
-  { customer: "OTP नहीं आया.", agent: "एक मिनट, फिर से भेजता हूँ.", language: "Hindi" },
-  { customer: "OTP రాలేదు.", agent: "ఒక్కసారి రీసెండ్ చేస్తాను సార్.", language: "Telugu" },
-  { customer: "డెలివరీ ఇంకా రాలేదు.", agent: "చెక్ చేసి అప్డేట్ చెప్తాను మేడమ్.", language: "Telugu" },
-  { customer: "refund kittiyilla.", agent: "24 hours ullil credit aavum ma'am.", language: "Manglish" },
-  { customer: "parcel innum varala.", agent: "check pannitu call back panren sir.", language: "Tanglish" },
-  { customer: "payment deduct ho gaya.", agent: "refund already initiate kar diya hai.", language: "Hinglish" },
-  { customer: "OTP raaledu.", agent: "okasari resend chesthanu sir.", language: "Tenglish" },
+  "24 മണിക്കൂറിനുള്ളിൽ ക്രെഡിറ്റ് ആവുമ്മാ.",
+  "ഒരു മിനിറ്റ്, റീസെൻഡ് ചെയ്യാം.",
+  "செக் பண்ணிட்டு கால் பண்ணறேன் சார்.",
+  "நான் லைன்ல இருக்கேன், சொல்லுங்க.",
+  "रिफंड शुरू कर दिया है सर.",
+  "एक मिनट, फिर से भेजता हूँ.",
+  "ఒక్కసారి రీసెండ్ చేస్తాను సార్.",
+  "చెక్ చేసి అప్డేట్ చెప్తాను మేడమ్.",
+  "24 hours ullil credit aavum ma'am.",
+  "check pannitu call back panren sir.",
+  "refund already initiate kar diya hai.",
+  "okasari resend chesthanu sir.",
 ];
 
 const emptySubscribe = () => () => {};
@@ -51,7 +51,7 @@ export function SupportLog() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentExchange = EXCHANGES[currentIndex];
-  const agentWords = toWords(currentExchange.agent);
+  const agentWords = toWords(currentExchange);
 
   const initializedRef = useRef(false);
 
@@ -138,21 +138,16 @@ export function SupportLog() {
   };
 
   if (isServer) {
-    const firstExchange = EXCHANGES[0];
-    const firstWords = toWords(firstExchange.agent);
+    const firstWords = toWords(EXCHANGES[0]);
     return (
       <div aria-hidden className="support-log">
-        <span className="support-meta">LIVE SUPPORT • {firstExchange.language}</span>
-        <div className="support-exchange">
-          <p className="support-customer">{'\u201C'}{firstExchange.customer}{'\u201D'}</p>
-          <p className="support-agent">
-            {firstWords.map((word, i) => (
-              <span key={i} className="support-word" style={{ marginRight: "0.25em" }}>
-                {word}
-              </span>
-            ))}
-          </p>
-        </div>
+        <p className="support-agent">
+          {firstWords.map((word, i) => (
+            <span key={i} className="support-word" style={{ marginRight: "0.25em" }}>
+              {word}
+            </span>
+          ))}
+        </p>
       </div>
     );
   }
@@ -166,11 +161,7 @@ export function SupportLog() {
         transition: "opacity 600ms ease-out",
       }}
     >
-      <span className="support-meta">LIVE SUPPORT • {currentExchange.language}</span>
-      <div className="support-exchange">
-        <p className="support-customer">{'\u201C'}{currentExchange.customer}{'\u201D'}</p>
-        <p className="support-agent">{renderAgentWords()}</p>
-      </div>
+      <p className="support-agent">{renderAgentWords()}</p>
     </div>
   );
 }
