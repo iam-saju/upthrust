@@ -12,7 +12,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-16 sm:pt-20 md:pt-24 pb-8 md:pb-10">
           <LabSection id="belief" label="Our Belief">
             <div>
-              <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug max-w-xl">
+              <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug max-w-xl" style={{ fontFamily: 'var(--font-instrument-serif), ui-serif, Georgia, serif' }}>
                 Support should sound like
                 <br className="md:hidden" />
                 {" "}your{" "}
@@ -37,7 +37,7 @@ export default function Home() {
                   className="voice-layer--inline voice-layer--accent"
                 />
                 <br />
-                {" "}picked up the <span className="text-neutral-950 font-bold inline-block mb-3" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
+                {" "}picked up the <span className="text-neutral-950 font-bold inline-block mb-3" style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
               </h1>
               <div className="max-w-xl space-y-6 pt-2">
                 <p>
@@ -45,7 +45,7 @@ export default function Home() {
                   <CrayonCircle>
                     <strong
                       className="font-medium text-neutral-950"
-                      style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', letterSpacing: '-0.01em' }}
+                      style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif', letterSpacing: '-0.01em' }}
                     >
                       Buoyancy Labs
                     </strong>
