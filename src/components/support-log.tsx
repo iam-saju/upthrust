@@ -19,13 +19,8 @@ const emptySubscribe = () => () => {};
 function getSnapshot() { return false; }
 function getServerSnapshot() { return true; }
 
-function toGraphemes(text: string): string[] {
-  try {
-    const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
-    return [...segmenter.segment(text)].map((s) => s.segment);
-  } catch {
-    return Array.from(text);
-  }
+function toWords(text: string): string[] {
+  return text.split(/\s+/).filter(Boolean);
 }
 
 function pickRandom(exclude: number): number {
@@ -39,7 +34,7 @@ function pickRandom(exclude: number): number {
 export function SupportLog() {
   const isServer = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [visibleChars, setVisibleChars] = useState(0);
+  const [visibleWords, setVisibleWords] = useState(0);
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   const cancelledRef = useRef(false);
@@ -47,7 +42,7 @@ export function SupportLog() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentExchange = EXCHANGES[currentIndex];
-  const agentGraphemes = toGraphemes(currentExchange.agent);
+  const agentWords = toWords(currentExchange.agent);
 
   const initializedRef = useRef(false);
 
@@ -63,7 +58,7 @@ export function SupportLog() {
     indexRef.current = pickRandom(-1);
 
     const LISTEN_TIME = 900;
-    const CHAR_DELAY = 60;
+    const WORD_DELAY = 140;
     const HOLD_TIME = 3000;
     const FADE_OUT_TIME = 600;
 
@@ -77,21 +72,21 @@ export function SupportLog() {
     function animateResponse(): void {
       if (cancelledRef.current) return;
 
-      let charIndex = 0;
-      setVisibleChars(0);
+      let wordIndex = 0;
+      setVisibleWords(0);
       setIsFadingOut(false);
 
       timeoutRef.current = setTimeout(() => {
         if (cancelledRef.current) return;
 
-        function revealNextChar(): void {
+        function revealNextWord(): void {
           if (cancelledRef.current) return;
 
-          if (charIndex < agentGraphemes.length) {
-            setVisibleChars(charIndex + 1);
-            charIndex++;
-            const hesitation = Math.random() < 0.1 ? 80 : 0;
-            timeoutRef.current = setTimeout(revealNextChar, CHAR_DELAY + hesitation);
+          if (wordIndex < agentWords.length) {
+            setVisibleWords(wordIndex + 1);
+            wordIndex++;
+            const hesitation = Math.random() < 0.1 ? 60 : 0;
+            timeoutRef.current = setTimeout(revealNextWord, WORD_DELAY + hesitation);
           } else {
             timeoutRef.current = setTimeout(() => {
               if (cancelledRef.current) return;
@@ -107,7 +102,7 @@ export function SupportLog() {
           }
         }
 
-        revealNextChar();
+        revealNextWord();
       }, LISTEN_TIME);
     }
 
@@ -119,20 +114,21 @@ export function SupportLog() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const renderAgentChars = () => {
-    return agentGraphemes.map((char, index) => (
+  const renderAgentWords = () => {
+    return agentWords.map((word, index) => (
       <span
         key={index}
-        className="support-char"
+        className="support-word"
         style={{
-          opacity: index < visibleChars ? 1 : 0,
-          transform: index < visibleChars ? "translateY(0)" : "translateY(3px)",
-          filter: index < visibleChars ? "blur(0)" : "blur(3px)",
+          opacity: index < visibleWords ? 1 : 0,
+          transform: index < visibleWords ? "translateY(0)" : "translateY(3px)",
+          filter: index < visibleWords ? "blur(0)" : "blur(3px)",
           transition: "opacity 260ms cubic-bezier(.22,.61,.36,1), transform 260ms cubic-bezier(.22,.61,.36,1), filter 260ms cubic-bezier(.22,.61,.36,1)",
           display: "inline-block",
+          marginRight: "0.35em",
         }}
       >
-        {char}
+        {word}
       </span>
     ));
   };
@@ -160,7 +156,7 @@ export function SupportLog() {
     >
       <div className="support-exchange">
         <p className="support-customer">{'\u201C'}{currentExchange.customer}{'\u201D'}</p>
-        <p className="support-agent">{renderAgentChars()}</p>
+        <p className="support-agent">{renderAgentWords()}</p>
       </div>
     </div>
   );

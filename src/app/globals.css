@@ -127,6 +127,9 @@ body::after {
     line-height: 1.7;
     font-weight: 400;
     color: rgba(17, 17, 17, 0.42);
+    text-align: right;
+    align-self: flex-end;
+    max-width: 85%;
 }
 
 .support-agent {
@@ -138,9 +141,10 @@ body::after {
     font-weight: 400;
     color: rgba(17, 17, 17, 0.82);
     min-height: 28px;
+    align-self: flex-start;
 }
 
-.support-char {
+.support-word {
     will-change: opacity, transform, filter;
 }
 
