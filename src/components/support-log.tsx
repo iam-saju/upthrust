@@ -63,7 +63,7 @@ export function SupportLog() {
     indexRef.current = pickRandom(-1);
 
     const INITIAL_DELAY = 400;
-    const WORD_DELAY = 90;
+    const WORD_DELAY = 120;
     const HOLD_TIME = 3000;
     const FADE_OUT_TIME = 600;
 
@@ -121,7 +121,7 @@ export function SupportLog() {
         className="support-word"
         style={{
           opacity: index < visibleWords ? 1 : 0,
-          transform: index < visibleWords ? "translateY(0)" : "translateY(4px)",
+          transform: index < visibleWords ? "translateY(0)" : "translateY(2px)",
           transition: `opacity 400ms ease-out, transform 400ms ease-out`,
           display: "inline-block",
           marginRight: "0.25em",
@@ -136,7 +136,7 @@ export function SupportLog() {
     const firstExchange = EXCHANGES[0];
     const firstWords = toWords(firstExchange.agent);
     return (
-      <div aria-hidden className="support-log -ml-5">
+      <div aria-hidden className="support-log">
         <div className="support-exchange">
           <p className="support-customer">{'\u201C'}{firstExchange.customer}{'\u201D'}</p>
           <p className="support-agent">
@@ -154,7 +154,7 @@ export function SupportLog() {
   return (
     <div 
       aria-hidden 
-      className="support-log -ml-5"
+      className="support-log"
       style={{
         opacity: isFadingOut ? 0 : 1,
         transition: "opacity 600ms ease-out",
