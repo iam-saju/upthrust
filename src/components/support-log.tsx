@@ -66,7 +66,7 @@ export function SupportLog() {
     cancelledRef.current = false;
     indexRef.current = pickRandom(-1);
 
-    const INITIAL_DELAY = 800;
+    const INITIAL_DELAY = 900;
     const WORD_DELAY = 140;
     const HOLD_TIME = 3000;
     const FADE_OUT_TIME = 600;
@@ -127,7 +127,7 @@ export function SupportLog() {
           opacity: index < visibleWords ? 1 : 0,
           transform: index < visibleWords ? "translateY(0)" : "translateY(4px)",
           filter: index < visibleWords ? "blur(0)" : "blur(2px)",
-          transition: "opacity 220ms ease, transform 220ms ease, filter 220ms ease",
+          transition: "opacity 260ms cubic-bezier(.22,.61,.36,1), transform 260ms cubic-bezier(.22,.61,.36,1), filter 260ms cubic-bezier(.22,.61,.36,1)",
           display: "inline-block",
           marginRight: "0.25em",
         }}
