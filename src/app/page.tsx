@@ -106,7 +106,8 @@ export default function Home() {
             </div>
           </LabSection>
 
-          <LabSection id="mission" label="The Mission">
+          <div className="mt-10 sm:mt-12 md:mt-14">
+            <LabSection id="mission" label="The Mission">
             <div className="max-w-xl space-y-6">
               <p>
                 We want every customer to feel heard in the language they trust.
@@ -153,6 +154,7 @@ export default function Home() {
               </div>
             </div>
           </LabSection>
+          </div>
         </div>
       </main>
     </>
