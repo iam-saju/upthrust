@@ -2,27 +2,15 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 
-const PHRASES = [
-  "haan checking now",
-  "ട്രാക്കിംഗ് അയച്ചിട്ടുണ്ട്",
-  "refund process aaguthu",
-  "സാർ OTP പറയാമോ",
-  "एक मिनट",
-  "பணம் வந்தாச்சு",
-  "link bhej diya",
-  "കേൾക്കുന്നുണ്ടോ",
-  "கால் கட் ஆயிடுச்சு",
-  "भुगतान आ गया",
-  "delivery എത്തി sir",
-  "இப்போ பார்க்கிறேன்",
-  "call reconnect ho raha hai",
-  "अभी चेक करता हूँ",
-  "ഒരു മിനിറ്റ്",
-  "आवाज़ आ रही है",
-  "one minute chetta",
-  "voice clear aa?",
-  "വിളി കട്ട് ആയി",
-  "कॉल कट गया",
+const EXCHANGES = [
+  { customer: "refund process aaguthu?", agent: "haan sir, initiated." },
+  { customer: "call cut aayiduchu…", agent: "naan line la iruken sir." },
+  { customer: "OTP vannilla.", agent: "oru minute chetta, resend cheyyam." },
+  { customer: "payment deduct ho gaya.", agent: "refund 24 hours mein aa jayega." },
+  { customer: "order ta ekhono asheni.", agent: "check kore bolchi dada." },
+  { customer: "sir OTP vannille…", agent: "resend cheythu chetta." },
+  { customer: "tracking number ethra?", agent: "share cheyyam sir." },
+  { customer: "product damage aayittund.", agent: "photo ayakkam ma'am." },
 ];
 
 const emptySubscribe = () => () => {};
@@ -33,89 +21,56 @@ function getServerSnapshot() {
   return true;
 }
 
-function randomBetween(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-
-function toGraphemes(word: string): string[] {
-  try {
-    const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
-    return [...segmenter.segment(word)].map((s) => s.segment);
-  } catch {
-    return Array.from(word);
-  }
-}
-
 function pickRandom(exclude: number): number {
   let next: number;
   do {
-    next = Math.floor(Math.random() * PHRASES.length);
-  } while (next === exclude && PHRASES.length > 1);
+    next = Math.floor(Math.random() * EXCHANGES.length);
+  } while (next === exclude && EXCHANGES.length > 1);
   return next;
 }
 
 export function SupportLog() {
   const isServer = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
-  const [currentText, setCurrentText] = useState("");
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [opacity, setOpacity] = useState(1);
 
   const cancelledRef = useRef(false);
-  const phraseIndexRef = useRef(0);
-  const graphemeCacheRef = useRef<Map<string, string[]>>(new Map());
-
-  function getGraphemes(word: string): string[] {
-    let cached = graphemeCacheRef.current.get(word);
-    if (!cached) {
-      cached = toGraphemes(word);
-      graphemeCacheRef.current.set(word, cached);
-    }
-    return cached;
-  }
+  const indexRef = useRef(0);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     cancelledRef.current = false;
-    phraseIndexRef.current = pickRandom(-1);
+    indexRef.current = pickRandom(-1);
+    setCurrentIndex(indexRef.current);
 
-    function cyclePhrase(
-      phrase: string,
-      step: number,
-    ): ReturnType<typeof setTimeout> | null {
-      if (cancelledRef.current) return null;
+    const HOLD_TIME = 3500; // 3.5s display
+    const FADE_OUT_TIME = 800; // 800ms fade out
+    const GAP_TIME = 400; // 400ms gap
 
-      const graphemes = getGraphemes(phrase);
-      const total = graphemes.length;
+    function cycleExchange(): void {
+      if (cancelledRef.current) return;
 
-      if (step < total) {
-        setCurrentText(graphemes.slice(0, step + 1).join(""));
-        const hesitation = Math.random() < 0.05 ? 300 : 0;
-        const delay = randomBetween(60, 120) + hesitation;
-        return setTimeout(() => cyclePhrase(phrase, step + 1), delay);
-      }
+      // Start fade out after hold time
+      setTimeout(() => {
+        if (cancelledRef.current) return;
+        setOpacity(0);
 
-      if (step === total) {
-        const holdDelay = randomBetween(1500, 2500);
-        return setTimeout(() => cyclePhrase(phrase, step + 1), holdDelay);
-      }
+        // After fade out + gap, switch and fade in
+        setTimeout(() => {
+          if (cancelledRef.current) return;
+          const nextIndex = pickRandom(indexRef.current);
+          indexRef.current = nextIndex;
+          setCurrentIndex(nextIndex);
+          setOpacity(1);
 
-      if (step < total * 2) {
-        const remaining = total - (step - total) - 1;
-        setCurrentText(graphemes.slice(0, remaining).join(""));
-        const delay = randomBetween(30, 80);
-        return setTimeout(() => cyclePhrase(phrase, step + 1), delay);
-      }
-
-      setCurrentText("");
-      const nextIndex = pickRandom(phraseIndexRef.current);
-      phraseIndexRef.current = nextIndex;
-      const gapDelay = randomBetween(400, 700);
-      return setTimeout(() => cyclePhrase(PHRASES[nextIndex], 0), gapDelay);
+          // Schedule next cycle
+          setTimeout(cycleExchange, HOLD_TIME);
+        }, FADE_OUT_TIME + GAP_TIME);
+      }, HOLD_TIME);
     }
 
-    const startDelay = randomBetween(800, 1500);
-    const initialTimeout = setTimeout(
-      () => cyclePhrase(PHRASES[phraseIndexRef.current], 0),
-      startDelay,
-    );
+    // Start first cycle
+    const initialTimeout = setTimeout(cycleExchange, HOLD_TIME);
 
     return () => {
       cancelledRef.current = true;
@@ -123,20 +78,40 @@ export function SupportLog() {
     };
   }, []);
 
+  const currentExchange = EXCHANGES[currentIndex];
+
   if (isServer) {
     return (
       <div aria-hidden className="support-log">
-        {PHRASES[0]}
+        <div className="support-exchange">
+          <div className="support-line">
+            <span className="support-label">customer:</span>
+            <span className="support-customer">{EXCHANGES[0].customer}</span>
+          </div>
+          <div className="support-line">
+            <span className="support-label">agent:</span>
+            <span className="support-agent">{EXCHANGES[0].agent}</span>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div aria-hidden className="support-log">
-      <span>
-        {currentText}
-        {currentText !== "" && <span className="voice-cursor">▎</span>}
-      </span>
+      <div 
+        className="support-exchange"
+        style={{ opacity, transition: "opacity 800ms ease-in-out" }}
+      >
+        <div className="support-line">
+          <span className="support-label">customer:</span>
+          <span className="support-customer">{currentExchange.customer}</span>
+        </div>
+        <div className="support-line">
+          <span className="support-label">agent:</span>
+          <span className="support-agent">{currentExchange.agent}</span>
+        </div>
+      </div>
     </div>
   );
 }

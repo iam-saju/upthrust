@@ -95,25 +95,55 @@ body::after {
     50% { opacity: 0; }
 }
 
-/* ─── Support log (single-line cycling) ───────────────────────────────────── */
+/* ─── Support log (conversation exchanges) ───────────────────────────────── */
 .support-log {
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
-    font-family:
-        "Kohinoor Devanagari", "Tiro Devanagari Hindi", "Noto Serif Devanagari",
-        "Tamil Sangam MN", "Gujarati Sangam MN", "Kannada MN", "Malayalam MN",
-        -apple-system, BlinkMacSystemFont, "Segoe UI", Georgia, serif;
-    font-size: 20px;
-    line-height: 1.5;
-    letter-spacing: 0.02em;
-    color: rgba(23, 23, 23, 0.38);
-    height: 2em;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
     padding-top: 1.5rem;
     padding-bottom: 0.75rem;
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+}
+
+.support-exchange {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.support-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.support-label {
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(0, 0, 0, 0.22);
+    flex-shrink: 0;
+}
+
+.support-customer,
+.support-agent {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    font-style: italic;
+    line-height: 1.7;
+}
+
+.support-customer {
+    color: rgba(0, 0, 0, 0.32);
+}
+
+.support-agent {
+    color: rgba(0, 0, 0, 0.44);
 }
 
 
