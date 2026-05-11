@@ -107,6 +107,7 @@ body::after {
     margin-top: 32px;
     margin-bottom: 36px;
     width: 100%;
+    max-width: 36rem;
     min-height: 60px;
     display: flex;
     align-items: center;
