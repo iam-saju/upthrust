@@ -95,14 +95,14 @@ body::after {
     50% { opacity: 0; }
 }
 
-/* ─── Support log (conversation exchanges) ───────────────────────────────── */
+/* ─── Support log (word-by-word conversation) ────────────────────────────── */
 .support-log {
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
     padding-top: 1.5rem;
     padding-bottom: 0.75rem;
-    min-height: 70px;
+    min-height: 60px;
     display: flex;
     align-items: center;
 }
@@ -110,40 +110,27 @@ body::after {
 .support-exchange {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-}
-
-.support-line {
-    display: flex;
-    align-items: baseline;
     gap: 0.5rem;
 }
 
-.support-label {
-    font-family:
-        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-        "Liberation Mono", "Courier New", monospace;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(0, 0, 0, 0.22);
-    flex-shrink: 0;
+.support-customer {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-size: 14px;
+    font-style: italic;
+    line-height: 1.9;
+    color: rgba(0, 0, 0, 0.42);
+    margin-bottom: 8px;
 }
 
-.support-customer,
 .support-agent {
     font-family: ui-serif, Georgia, "Times New Roman", serif;
     font-size: 15px;
-    font-style: italic;
-    line-height: 1.7;
+    line-height: 1.9;
+    color: rgba(17, 17, 17, 0.78);
 }
 
-.support-customer {
-    color: rgba(0, 0, 0, 0.32);
-}
-
-.support-agent {
-    color: rgba(0, 0, 0, 0.44);
+.support-word {
+    will-change: opacity, transform;
 }
 
 
