@@ -34,6 +34,27 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                document.querySelectorAll('[bis_skin_checked]').forEach(function(el) {
+                  el.removeAttribute('bis_skin_checked');
+                });
+                var observer = new MutationObserver(function(mutations) {
+                  mutations.forEach(function(mutation) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'bis_skin_checked') {
+                      mutation.target.removeAttribute('bis_skin_checked');
+                    }
+                  });
+                });
+                observer.observe(document.documentElement, { attributes: true, subtree: true, attributeFilter: ['bis_skin_checked'] });
+              })();
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} ${instrumentSerif.variable} ${spaceGrotesk.variable} min-h-full flex flex-col bg-white text-neutral-900`}
         style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}
