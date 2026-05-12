@@ -98,9 +98,9 @@ async def stt(audio_bytes: bytes, language_code: str) -> str:
                 
                 if resp.status_code == 200:
                     result = resp.json()
-                    transcript = result.get("transcript", "")
+                    transcript = result.get("transcript") or ""
                     detected_lang = result.get("language_code", "unknown")
-                    logger.info(f"STT success: {transcript[:100]} (detected: {detected_lang})")
+                    logger.info(f"STT success: {transcript[:100] if transcript else '(empty)'} (detected: {detected_lang})")
                     return transcript
                 else:
                     logger.warning(f"STT failed with {resp.status_code}: {resp.text[:200]}")
@@ -150,11 +150,18 @@ async def llm(user_text: str, language_code: str, session_id: str) -> str:
             headers=headers,
         )
         resp.raise_for_status()
-        response_text = resp.json()["choices"][0]["message"]["content"]
+        result = resp.json()
+        response_text = result.get("choices", [{}])[0].get("message", {}).get("content") or ""
         
-        # Update conversation memory
-        history.append({"role": "user", "content": user_text})
-        history.append({"role": "assistant", "content": response_text})
+        # If LLM returned empty, use a fallback
+        if not response_text.strip():
+            logger.warning("LLM returned empty response, using fallback")
+            response_text = "I'm Ra.One from Buoyancy Labs. How can I help you today?"
+        
+        # Update conversation memory (only if we have a real response)
+        if response_text.strip():
+            history.append({"role": "user", "content": user_text})
+            history.append({"role": "assistant", "content": response_text})
         
         return response_text
 
@@ -222,7 +229,7 @@ async def talk(
         logger.info(f"Audio size: {len(audio_bytes)} bytes")
         user_text = await stt(audio_bytes, language_code)
 
-        if not user_text.strip():
+        if not user_text or not user_text.strip():
             raise HTTPException(status_code=400, detail="No speech detected")
 
         # 2. LLM — generate response with conversation memory
@@ -230,8 +237,8 @@ async def talk(
         response_text = await llm(user_text, language_code, session_id)
         logger.info(f"LLM response: {response_text[:100] if response_text else '(empty)'}")
         
-        # Fallback if LLM returns empty
-        if not response_text.strip():
+        # Fallback if LLM returns empty or None
+        if not response_text or not response_text.strip():
             response_text = "I'm sorry, I didn't understand that. Could you please try again?"
             logger.warning("LLM returned empty, using fallback response")
 
