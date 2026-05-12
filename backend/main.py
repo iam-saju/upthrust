@@ -118,6 +118,8 @@ async def stt(audio_bytes: bytes, language_code: str) -> str:
 
 async def llm(user_text: str, language_code: str, session_id: str) -> str:
     """Send text to Sarvam-30B LLM with conversation memory, return response."""
+    import json as json_lib
+    
     # Get or create session history
     if session_id not in sessions:
         sessions[session_id] = []
@@ -126,7 +128,7 @@ async def llm(user_text: str, language_code: str, session_id: str) -> str:
     
     # Build messages with system prompt + history + current user message
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(history[-(MAX_HISTORY * 2):])  # Keep last N exchanges
+    messages.extend(history[-(MAX_HISTORY * 2):])
     messages.append({"role": "user", "content": user_text})
     
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -135,44 +137,26 @@ async def llm(user_text: str, language_code: str, session_id: str) -> str:
             "messages": messages,
             "temperature": 0.5,
             "max_tokens": 150,
-            "stream": True,
         }
         headers = {
             "Authorization": f"Bearer {SARVAM_API_KEY}",
             "Content-Type": "application/json",
         }
         
-        # Stream the LLM response for faster time-to-first-token
-        async with client.stream(
-            "POST",
+        # Non-streaming for reliability (streaming was returning empty)
+        resp = await client.post(
             f"{SARVAM_BASE}/v1/chat/completions",
             json=payload,
             headers=headers,
-        ) as resp:
-            resp.raise_for_status()
-            
-            full_response = []
-            async for line in resp.aiter_lines():
-                if line.startswith("data: "):
-                    data = line[6:]
-                    if data == "[DONE]":
-                        break
-                    try:
-                        import json
-                        chunk = json.loads(data)
-                        content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                        if content:
-                            full_response.append(content)
-                    except:
-                        pass
-            
-            response_text = "".join(full_response)
-            
-            # Update conversation memory
-            history.append({"role": "user", "content": user_text})
-            history.append({"role": "assistant", "content": response_text})
-            
-            return response_text
+        )
+        resp.raise_for_status()
+        response_text = resp.json()["choices"][0]["message"]["content"]
+        
+        # Update conversation memory
+        history.append({"role": "user", "content": user_text})
+        history.append({"role": "assistant", "content": response_text})
+        
+        return response_text
 
 
 async def tts_stream(text: str, language_code: str):
@@ -184,7 +168,7 @@ async def tts_stream(text: str, language_code: str):
             "target_language_code": language_code,
             "speaker": SPEAKER_MAP.get(language_code, "shubh"),
             "output_audio_codec": "mp3",
-            "pace": 1.1,  # Slightly faster for better demo feel
+            "pace": 1.1,
         }
         headers = {
             "api-subscription-key": SARVAM_API_KEY,
@@ -202,7 +186,9 @@ async def tts_stream(text: str, language_code: str):
             if resp.status_code != 200:
                 error_text = await resp.aread()
                 logger.error(f"TTS stream error: {resp.status_code} - {error_text[:200]}")
-                raise HTTPException(status_code=500, detail=f"TTS error: {error_text.decode()}")
+                # Return silence instead of crashing
+                yield b""
+                return
             
             chunk_count = 0
             async for chunk in resp.aiter_bytes():
@@ -242,7 +228,12 @@ async def talk(
         # 2. LLM — generate response with conversation memory
         logger.info(f"User text: {user_text[:100]}")
         response_text = await llm(user_text, language_code, session_id)
-        logger.info(f"LLM response: {response_text[:100]}")
+        logger.info(f"LLM response: {response_text[:100] if response_text else '(empty)'}")
+        
+        # Fallback if LLM returns empty
+        if not response_text.strip():
+            response_text = "I'm sorry, I didn't understand that. Could you please try again?"
+            logger.warning("LLM returned empty, using fallback response")
 
         # 3. TTS — stream audio back
         logger.info("Starting TTS stream...")
