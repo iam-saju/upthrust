@@ -34,14 +34,14 @@ if not SARVAM_API_KEY:
 SARVAM_BASE = "https://api.sarvam.ai"
 
 # RA-1 System Prompt
-SYSTEM_PROMPT = """You are RA-1, a warm, helpful, and respectful voice customer support agent from Buoyancy Labs.
+SYSTEM_PROMPT = """You are Ra.One (pronounced "R-A-One" like the Shahrukh Khan movie), a warm, helpful, and respectful voice customer support agent from Buoyancy Labs.
 
 Your personality:
 - Speak naturally like a friendly Indian customer support executive
 - Be polite, patient, and solution-oriented
 - Use simple, clear language
 - Show empathy when the customer is frustrated
-- Keep answers concise but helpful (avoid long replies)
+- Keep answers concise but helpful (1-2 sentences max)
 - If you don't know something, say so honestly and offer alternatives
 
 Tone: Warm, professional, and approachable. Never robotic.
@@ -74,13 +74,17 @@ async def stt(audio_bytes: bytes, language_code: str) -> str:
     logger.info(f"STT request: {len(audio_bytes)} bytes, language={language_code}")
     
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # For English, try without language_code first (auto-detect)
+        # For Indic languages, always specify language_code
+        language_param = language_code if language_code != "en-IN" else "unknown"
+        
         # Try webm first, fallback to wav if needed
         for filename, content_type in [("audio.webm", "audio/webm"), ("audio.wav", "audio/wav")]:
             files = {"file": (filename, audio_bytes, content_type)}
             data = {
                 "model": "saaras:v3",
                 "mode": "transcribe",
-                "language_code": language_code,
+                "language_code": language_param,
             }
             headers = {"api-subscription-key": SARVAM_API_KEY}
             
@@ -95,7 +99,8 @@ async def stt(audio_bytes: bytes, language_code: str) -> str:
                 if resp.status_code == 200:
                     result = resp.json()
                     transcript = result.get("transcript", "")
-                    logger.info(f"STT success: {transcript[:100]}")
+                    detected_lang = result.get("language_code", "unknown")
+                    logger.info(f"STT success: {transcript[:100]} (detected: {detected_lang})")
                     return transcript
                 else:
                     logger.warning(f"STT failed with {resp.status_code}: {resp.text[:200]}")
@@ -128,26 +133,46 @@ async def llm(user_text: str, language_code: str, session_id: str) -> str:
         payload = {
             "model": "sarvam-30b",
             "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 300,
+            "temperature": 0.5,
+            "max_tokens": 150,
+            "stream": True,
         }
         headers = {
             "Authorization": f"Bearer {SARVAM_API_KEY}",
             "Content-Type": "application/json",
         }
-        resp = await client.post(
+        
+        # Stream the LLM response for faster time-to-first-token
+        async with client.stream(
+            "POST",
             f"{SARVAM_BASE}/v1/chat/completions",
             json=payload,
             headers=headers,
-        )
-        resp.raise_for_status()
-        response_text = resp.json()["choices"][0]["message"]["content"]
-        
-        # Update conversation memory
-        history.append({"role": "user", "content": user_text})
-        history.append({"role": "assistant", "content": response_text})
-        
-        return response_text
+        ) as resp:
+            resp.raise_for_status()
+            
+            full_response = []
+            async for line in resp.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        import json
+                        chunk = json.loads(data)
+                        content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if content:
+                            full_response.append(content)
+                    except:
+                        pass
+            
+            response_text = "".join(full_response)
+            
+            # Update conversation memory
+            history.append({"role": "user", "content": user_text})
+            history.append({"role": "assistant", "content": response_text})
+            
+            return response_text
 
 
 async def tts_stream(text: str, language_code: str):
@@ -159,11 +184,14 @@ async def tts_stream(text: str, language_code: str):
             "target_language_code": language_code,
             "speaker": SPEAKER_MAP.get(language_code, "shubh"),
             "output_audio_codec": "mp3",
+            "pace": 1.1,  # Slightly faster for better demo feel
         }
         headers = {
             "api-subscription-key": SARVAM_API_KEY,
             "Content-Type": "application/json",
         }
+        
+        logger.info(f"TTS streaming: {text[:100]}...")
         
         async with client.stream(
             "POST",
@@ -171,9 +199,17 @@ async def tts_stream(text: str, language_code: str):
             json=payload,
             headers=headers,
         ) as resp:
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                error_text = await resp.aread()
+                logger.error(f"TTS stream error: {resp.status_code} - {error_text[:200]}")
+                raise HTTPException(status_code=500, detail=f"TTS error: {error_text.decode()}")
+            
+            chunk_count = 0
             async for chunk in resp.aiter_bytes():
+                chunk_count += 1
                 yield chunk
+            
+            logger.info(f"TTS stream complete: {chunk_count} chunks")
 
 
 @app.post("/talk")
@@ -194,28 +230,43 @@ async def talk(
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    # 1. STT — speech to text
-    audio_bytes = await audio.read()
-    logger.info(f"Audio size: {len(audio_bytes)} bytes")
-    user_text = await stt(audio_bytes, language_code)
+    try:
+        # 1. STT — speech to text
+        audio_bytes = await audio.read()
+        logger.info(f"Audio size: {len(audio_bytes)} bytes")
+        user_text = await stt(audio_bytes, language_code)
 
-    if not user_text.strip():
-        raise HTTPException(status_code=400, detail="No speech detected")
+        if not user_text.strip():
+            raise HTTPException(status_code=400, detail="No speech detected")
 
-    # 2. LLM — generate response with conversation memory
-    logger.info(f"User text: {user_text[:100]}")
-    response_text = await llm(user_text, language_code, session_id)
-    logger.info(f"LLM response: {response_text[:100]}")
+        # 2. LLM — generate response with conversation memory
+        logger.info(f"User text: {user_text[:100]}")
+        response_text = await llm(user_text, language_code, session_id)
+        logger.info(f"LLM response: {response_text[:100]}")
 
-    # 3. TTS — stream audio back
-    logger.info("Starting TTS stream...")
-    return StreamingResponse(
-        tts_stream(response_text, language_code),
-        media_type="audio/mpeg",
-        headers={"X-Session-ID": session_id},
-    )
+        # 3. TTS — stream audio back
+        logger.info("Starting TTS stream...")
+        return StreamingResponse(
+            tts_stream(response_text, language_code),
+            media_type="audio/mpeg",
+            headers={"X-Session-ID": session_id},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Talk endpoint error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "buoyancy-voice-demo"}
+
+
+@app.post("/clear-session")
+async def clear_session(session_id: str = Form("")):
+    """Clear conversation memory for a session."""
+    if session_id and session_id in sessions:
+        del sessions[session_id]
+        return {"status": "cleared", "session_id": session_id}
+    return {"status": "no session found"}
