@@ -2,11 +2,12 @@ import os
 import base64
 import httpx
 import logging
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse, Response
 
 # Load .env file for local development
 env_path = Path(__file__).parent / ".env"
@@ -62,6 +63,11 @@ SPEAKER_MAP = {
     "ml-IN": "shubh",
 }
 
+# Simple in-memory conversation memory (session_id → list of messages)
+# For demo only — no persistence
+sessions: dict[str, list[dict]] = {}
+MAX_HISTORY = 5  # Keep last 5 exchanges
+
 
 async def stt(audio_bytes: bytes, language_code: str) -> str:
     """Send audio to Sarvam STT, return transcribed text."""
@@ -105,15 +111,23 @@ async def stt(audio_bytes: bytes, language_code: str) -> str:
     raise HTTPException(status_code=400, detail="STT failed for all formats")
 
 
-async def llm(user_text: str, language_code: str) -> str:
-    """Send text to Sarvam-30B LLM, return response."""
+async def llm(user_text: str, language_code: str, session_id: str) -> str:
+    """Send text to Sarvam-30B LLM with conversation memory, return response."""
+    # Get or create session history
+    if session_id not in sessions:
+        sessions[session_id] = []
+    
+    history = sessions[session_id]
+    
+    # Build messages with system prompt + history + current user message
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(history[-(MAX_HISTORY * 2):])  # Keep last N exchanges
+    messages.append({"role": "user", "content": user_text})
+    
     async with httpx.AsyncClient(timeout=30.0) as client:
         payload = {
             "model": "sarvam-30b",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
+            "messages": messages,
             "temperature": 0.7,
             "max_tokens": 300,
         }
@@ -127,44 +141,58 @@ async def llm(user_text: str, language_code: str) -> str:
             headers=headers,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        response_text = resp.json()["choices"][0]["message"]["content"]
+        
+        # Update conversation memory
+        history.append({"role": "user", "content": user_text})
+        history.append({"role": "assistant", "content": response_text})
+        
+        return response_text
 
 
-async def tts(text: str, language_code: str) -> bytes:
-    """Send text to Sarvam TTS, return audio bytes (WAV)."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
+async def tts_stream(text: str, language_code: str):
+    """Stream TTS audio from Sarvam HTTP Stream endpoint."""
+    async with httpx.AsyncClient(timeout=60.0) as client:
         payload = {
             "text": text,
             "model": "bulbul:v3",
             "target_language_code": language_code,
             "speaker": SPEAKER_MAP.get(language_code, "shubh"),
+            "output_audio_codec": "mp3",
         }
         headers = {
             "api-subscription-key": SARVAM_API_KEY,
             "Content-Type": "application/json",
         }
-        resp = await client.post(
-            f"{SARVAM_BASE}/text-to-speech",
+        
+        async with client.stream(
+            "POST",
+            f"{SARVAM_BASE}/text-to-speech/stream",
             json=payload,
             headers=headers,
-        )
-        resp.raise_for_status()
-        audio_b64 = resp.json()["audios"][0]
-        return base64.b64decode(audio_b64)
+        ) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                yield chunk
 
 
 @app.post("/talk")
 async def talk(
     audio: UploadFile = File(...),
     language: str = Form("en"),
+    session_id: str = Form(""),
 ):
-    """Main demo endpoint: audio in → AI voice out."""
-    logger.info(f"Talk request: language={language}, content_type={audio.content_type}, filename={audio.filename}")
+    """Main demo endpoint: audio in → AI voice out (streaming)."""
+    logger.info(f"Talk request: language={language}, session={session_id}, content_type={audio.content_type}")
     
     if not audio.content_type or not audio.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Audio file required")
 
     language_code = LANGUAGE_MAP.get(language, "en-IN")
+    
+    # Generate session ID if not provided
+    if not session_id:
+        session_id = str(uuid.uuid4())
 
     # 1. STT — speech to text
     audio_bytes = await audio.read()
@@ -174,16 +202,18 @@ async def talk(
     if not user_text.strip():
         raise HTTPException(status_code=400, detail="No speech detected")
 
-    # 2. LLM — generate response
+    # 2. LLM — generate response with conversation memory
     logger.info(f"User text: {user_text[:100]}")
-    response_text = await llm(user_text, language_code)
+    response_text = await llm(user_text, language_code, session_id)
     logger.info(f"LLM response: {response_text[:100]}")
 
-    # 3. TTS — text to speech
-    audio_response = await tts(response_text, language_code)
-    logger.info(f"TTS response size: {len(audio_response)} bytes")
-
-    return Response(content=audio_response, media_type="audio/wav")
+    # 3. TTS — stream audio back
+    logger.info("Starting TTS stream...")
+    return StreamingResponse(
+        tts_stream(response_text, language_code),
+        media_type="audio/mpeg",
+        headers={"X-Session-ID": session_id},
+    )
 
 
 @app.get("/health")

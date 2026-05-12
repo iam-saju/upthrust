@@ -23,8 +23,9 @@ export function VoiceWidget() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionIdRef = useRef<string>("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (isRecording && timeLeft > 0) {
@@ -43,20 +44,28 @@ export function VoiceWidget() {
     };
   }, [isRecording]);
 
-  const playAudio = useCallback(async (arrayBuffer: ArrayBuffer) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
+  const playAudio = useCallback(async (audioBlob: Blob) => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      URL.revokeObjectURL(audioRef.current.src);
     }
-    if (audioContextRef.current.state === "suspended") {
-      await audioContextRef.current.resume();
-    }
-    const audioBuffer = await audioContextRef.current.decodeAudioData(
-      arrayBuffer
-    );
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContextRef.current.destination);
-    source.start();
+
+    const url = URL.createObjectURL(audioBlob);
+    const audio = new Audio(url);
+    audioRef.current = audio;
+
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      setStatus("Tap to start");
+    };
+
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      setStatus("Playback error. Try again.");
+    };
+
+    setStatus("Playing response...");
+    await audio.play();
   }, []);
 
   const sendToBackend = useCallback(
@@ -64,6 +73,7 @@ export function VoiceWidget() {
       const formData = new FormData();
       formData.append("audio", audioBlob, "recording.webm");
       formData.append("language", language);
+      formData.append("session_id", sessionIdRef.current);
 
       try {
         const resp = await fetch(`${BACKEND_URL}/talk`, {
@@ -76,10 +86,13 @@ export function VoiceWidget() {
           throw new Error(errText || "Backend error");
         }
 
-        const audioBuffer = await resp.arrayBuffer();
-        setStatus("Playing response...");
-        await playAudio(audioBuffer);
-        setStatus("Tap to start");
+        // Capture session ID for conversation memory
+        const newSessionId = resp.headers.get("X-Session-ID");
+        if (newSessionId) sessionIdRef.current = newSessionId;
+
+        // Stream the audio response
+        const audioBlob = await resp.blob();
+        await playAudio(audioBlob);
       } catch (err: any) {
         setStatus(err.message || "Error. Try again.");
       } finally {
@@ -131,6 +144,9 @@ export function VoiceWidget() {
       mediaRecorderRef.current?.stop();
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
     }
     setIsOpen(false);
     setStatus("Tap to start");
