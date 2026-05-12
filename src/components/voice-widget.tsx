@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+const MAX_RECORDING_SECONDS = 25;
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -17,10 +19,29 @@ export function VoiceWidget() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("Tap to start");
+  const [timeLeft, setTimeLeft] = useState(MAX_RECORDING_SECONDS);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isRecording && timeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            stopRecording();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
 
   const playAudio = useCallback(async (arrayBuffer: ArrayBuffer) => {
     if (!audioContextRef.current) {
@@ -90,7 +111,8 @@ export function VoiceWidget() {
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsRecording(true);
-      setStatus("Listening...");
+      setTimeLeft(MAX_RECORDING_SECONDS);
+      setStatus(`Listening... ${MAX_RECORDING_SECONDS}s`);
     } catch {
       setStatus("Mic permission denied");
     }
@@ -101,16 +123,19 @@ export function VoiceWidget() {
     setIsRecording(false);
     setIsProcessing(true);
     setStatus("Processing...");
+    if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
   const handleClose = useCallback(() => {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
       setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
     }
     setIsOpen(false);
     setStatus("Tap to start");
     setIsProcessing(false);
+    setTimeLeft(MAX_RECORDING_SECONDS);
   }, [isRecording]);
 
   if (!isOpen) {
@@ -191,10 +216,19 @@ export function VoiceWidget() {
             : "bg-neutral-900 text-white hover:bg-neutral-800"
         }`}
       >
-        {isRecording ? "⏹ Stop" : isProcessing ? "Processing..." : "🎤 Start"}
+        {isRecording ? `⏹ Stop (${timeLeft}s)` : isProcessing ? "Processing..." : "🎤 Start"}
       </button>
 
       <p className="text-xs text-neutral-400 text-center mt-3">{status}</p>
+
+      {isRecording && (
+        <div className="mt-3 h-1 bg-neutral-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-red-500 transition-all duration-1000 ease-linear"
+            style={{ width: `${(timeLeft / MAX_RECORDING_SECONDS) * 100}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

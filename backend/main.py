@@ -1,9 +1,20 @@
 import os
 import base64
 import httpx
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+
+# Load .env file for local development
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Buoyancy Labs Voice Demo")
 
@@ -54,23 +65,44 @@ SPEAKER_MAP = {
 
 async def stt(audio_bytes: bytes, language_code: str) -> str:
     """Send audio to Sarvam STT, return transcribed text."""
+    logger.info(f"STT request: {len(audio_bytes)} bytes, language={language_code}")
+    
     async with httpx.AsyncClient(timeout=30.0) as client:
-        files = {"file": ("audio.webm", audio_bytes, "audio/webm")}
-        data = {
-            "model": "saaras:v3",
-            "mode": "transcribe",
-            "language_code": language_code,
-        }
-        headers = {"api-subscription-key": SARVAM_API_KEY}
-        resp = await client.post(
-            f"{SARVAM_BASE}/speech-to-text",
-            files=files,
-            data=data,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        return result.get("transcript", "")
+        # Try webm first, fallback to wav if needed
+        for filename, content_type in [("audio.webm", "audio/webm"), ("audio.wav", "audio/wav")]:
+            files = {"file": (filename, audio_bytes, content_type)}
+            data = {
+                "model": "saaras:v3",
+                "mode": "transcribe",
+                "language_code": language_code,
+            }
+            headers = {"api-subscription-key": SARVAM_API_KEY}
+            
+            try:
+                resp = await client.post(
+                    f"{SARVAM_BASE}/speech-to-text",
+                    files=files,
+                    data=data,
+                    headers=headers,
+                )
+                
+                if resp.status_code == 200:
+                    result = resp.json()
+                    transcript = result.get("transcript", "")
+                    logger.info(f"STT success: {transcript[:100]}")
+                    return transcript
+                else:
+                    logger.warning(f"STT failed with {resp.status_code}: {resp.text[:200]}")
+                    if content_type == "audio/wav":
+                        raise HTTPException(status_code=400, detail=f"STT error: {resp.text}")
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"STT exception: {e}")
+                if content_type == "audio/wav":
+                    raise HTTPException(status_code=500, detail=f"STT failed: {str(e)}")
+    
+    raise HTTPException(status_code=400, detail="STT failed for all formats")
 
 
 async def llm(user_text: str, language_code: str) -> str:
@@ -127,6 +159,8 @@ async def talk(
     language: str = Form("en"),
 ):
     """Main demo endpoint: audio in → AI voice out."""
+    logger.info(f"Talk request: language={language}, content_type={audio.content_type}, filename={audio.filename}")
+    
     if not audio.content_type or not audio.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Audio file required")
 
@@ -134,16 +168,20 @@ async def talk(
 
     # 1. STT — speech to text
     audio_bytes = await audio.read()
+    logger.info(f"Audio size: {len(audio_bytes)} bytes")
     user_text = await stt(audio_bytes, language_code)
 
     if not user_text.strip():
         raise HTTPException(status_code=400, detail="No speech detected")
 
     # 2. LLM — generate response
+    logger.info(f"User text: {user_text[:100]}")
     response_text = await llm(user_text, language_code)
+    logger.info(f"LLM response: {response_text[:100]}")
 
     # 3. TTS — text to speech
     audio_response = await tts(response_text, language_code)
+    logger.info(f"TTS response size: {len(audio_response)} bytes")
 
     return Response(content=audio_response, media_type="audio/wav")
 
