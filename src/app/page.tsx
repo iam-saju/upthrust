@@ -3,6 +3,7 @@ import { LabSection } from "@/components/lab-section";
 import { VoiceTyping } from "@/components/voice-typing";
 import { SupportLog } from "@/components/support-log";
 import { CrayonCircle } from "@/components/crayon-circle";
+import { VoiceWidget } from "@/components/voice-widget";
 
 export default function Home() {
   return (
@@ -157,6 +158,7 @@ export default function Home() {
           </div>
         </div>
       </main>
+      <VoiceWidget />
     </>
   );
 }
