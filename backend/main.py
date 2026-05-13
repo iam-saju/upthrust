@@ -37,6 +37,24 @@ if not SARVAM_API_KEY:
 
 SARVAM_BASE = "https://api.sarvam.ai"
 
+# RA-1 System Prompt
+SYSTEM_PROMPT = """You are Ra.One (pronounced "R-A-One" like the Shahrukh Khan movie), a warm, helpful, and respectful voice customer support agent from Buoyancy Labs.
+
+Your personality:
+- Speak naturally like a friendly Indian customer support executive
+- Be polite, patient, and solution-oriented
+- Use simple, clear language
+- Show empathy when the customer is frustrated
+- Keep answers concise but helpful (1-2 sentences max)
+- If you don't know something, say so honestly and offer alternatives
+
+Tone: Warm, professional, and approachable. Never robotic.
+
+Always respond in the same language the user is speaking (Hindi, Hinglish, Tamil, English, etc.).
+
+Current company: Buoyancy Labs - We build voice AI agents for Indian businesses.
+"""
+
 LANGUAGE_MAP = {
     "en-IN": "en-IN",
     "hi-IN": "hi-IN",
@@ -51,20 +69,6 @@ SPEAKER_MAP = {
     "ta-IN": "shubh",
 }
 
-LANGUAGE_NAME_MAP = {
-    "en-IN": "English",
-    "hi-IN": "Hindi",
-    "ml-IN": "Malayalam",
-    "ta-IN": "Tamil",
-}
-
-FALLBACK_MAP = {
-    "en-IN": "I'm sorry, I didn't understand that. Could you please try again?",
-    "hi-IN": "माफ़ कीजिए, मुझे समझ नहीं आया। क्या आप दोबारा बोल सकते हैं?",
-    "ml-IN": "ക്ഷമിക്കണം, എനിക്ക് മനസ്സിലായില്ല. ഒന്നുകൂടി പറയാമോ?",
-    "ta-IN": "மன்னிக்கவும், எனக்கு புரியவில்லை. மீண்டும் சொல்ல முடியுமா?",
-}
-
 GREETINGS_MAP = {
     "en-IN": "Hello! I am Ra.One, your voice assistant from Buoyancy Labs. How can I help you today?",
     "hi-IN": "नमस्ते! मैं बॉयन्सी लैब्स से रा.वन हूँ। मैं आपकी कैसे मदद कर सकता हूँ?",
@@ -75,7 +79,7 @@ GREETINGS_MAP = {
 # Simple in-memory conversation memory (session_id → list of messages)
 # For demo only — no persistence
 sessions: dict[str, list[dict]] = {}
-MAX_HISTORY = 3  # Keep last 3 exchanges (6 messages)
+MAX_HISTORY = 5  # Keep last 5 exchanges
 
 
 async def stt(audio_bytes: bytes, language_code: str = "unknown") -> tuple[str, str]:
@@ -140,33 +144,16 @@ async def stt(audio_bytes: bytes, language_code: str = "unknown") -> tuple[str, 
 
 async def llm(user_text: str, language_code: str, session_id: str) -> str:
     """Send text to Sarvam-30B LLM with conversation memory, return response."""
+    import json as json_lib
+    
+    # Get or create session history
     if session_id not in sessions:
         sessions[session_id] = []
     
     history = sessions[session_id]
-    language_name = LANGUAGE_NAME_MAP.get(language_code, "English")
     
-    system_prompt = f"""You are Ra.One (pronounced "R-A-One"), a warm, helpful, and respectful voice customer support agent from Buoyancy Labs.
-
-Your personality:
-- Speak naturally like a friendly Indian customer support executive
-- Be polite, patient, and solution-oriented
-- Use simple, clear language
-- Show empathy when the customer is frustrated
-- If you don't know something, say so honestly and offer alternatives
-
-Tone: Warm, professional, and approachable. Never robotic.
-
-IMPORTANT RULES:
-1. You MUST respond ONLY in {language_name}. Never switch to another language.
-2. This is a voice call. Keep every response under 2 sentences. Be brief.
-3. No markdown, no emojis, no bullet points.
-
-Current company: Buoyancy Labs — we build voice AI agents for Indian businesses.
-"""
-    logger.info(f"LLM system prompt language: {language_name}")
-    
-    messages = [{"role": "system", "content": system_prompt}]
+    # Build messages with system prompt + history + current user message
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history[-(MAX_HISTORY * 2):])
     messages.append({"role": "user", "content": user_text})
     
@@ -175,13 +162,14 @@ Current company: Buoyancy Labs — we build voice AI agents for Indian businesse
             "model": "sarvam-30b",
             "messages": messages,
             "temperature": 0.5,
-            "max_tokens": 300,
+            "max_tokens": 2000,
         }
         headers = {
             "Authorization": f"Bearer {SARVAM_API_KEY}",
             "Content-Type": "application/json",
         }
         
+        # Non-streaming for reliability (streaming was returning empty)
         resp = await client.post(
             f"{SARVAM_BASE}/v1/chat/completions",
             json=payload,
@@ -191,10 +179,12 @@ Current company: Buoyancy Labs — we build voice AI agents for Indian businesse
         result = resp.json()
         response_text = result.get("choices", [{}])[0].get("message", {}).get("content") or ""
         
+        # If LLM returned empty, use a fallback
         if not response_text.strip():
             logger.warning("LLM returned empty response, using fallback")
-            response_text = FALLBACK_MAP.get(language_code, FALLBACK_MAP["en-IN"])
+            response_text = "I'm Ra.One from Buoyancy Labs. How can I help you today?"
         
+        # Update conversation memory (only if we have a real response)
         if response_text.strip():
             history.append({"role": "user", "content": user_text})
             history.append({"role": "assistant", "content": response_text})
@@ -276,7 +266,7 @@ async def talk(
         
         # Fallback if LLM returns empty or None
         if not response_text or not response_text.strip():
-            response_text = FALLBACK_MAP.get(language_code, FALLBACK_MAP["en-IN"])
+            response_text = "I'm sorry, I didn't understand that. Could you please try again?"
             logger.warning("LLM returned empty, using fallback response")
 
         # 3. TTS — stream audio back
