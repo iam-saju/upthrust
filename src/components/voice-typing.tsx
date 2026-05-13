@@ -38,7 +38,6 @@ export function VoiceTyping({
 }: { words?: string[]; className?: string }) {
   const isServer = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
   const [currentText, setCurrentText] = useState("");
-  const [isVisible, setIsVisible] = useState(true);
 
   const cancelledRef = useRef(false);
   const wordIndexRef = useRef(0);
@@ -71,9 +70,6 @@ export function VoiceTyping({
       const total = graphemes.length;
 
       if (phase === "typing") {
-        if (index === 0) {
-          setIsVisible(true);
-        }
         if (index < total) {
           setCurrentText(graphemes.slice(0, index + 1).join(""));
           const hesitation = Math.random() < 0.05 ? 400 : 0;
@@ -93,7 +89,6 @@ export function VoiceTyping({
           schedule(() => cycleWord(word, "deleting", index - 1), delay);
           return;
         }
-        setIsVisible(false);
         setCurrentText("");
         const nextWordIndex = (wordIndexRef.current + 1) % words.length;
         wordIndexRef.current = nextWordIndex;
@@ -114,29 +109,14 @@ export function VoiceTyping({
 
   if (isServer) {
     return (
-      <span
-        aria-hidden
-        className={`voice-layer ${className}`}
-        style={{ display: 'inline-block', minWidth: '140px' }}
-        data-voice-typing
-      >
+      <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '140px' }}>
         {words[0]}
       </span>
     );
   }
 
   return (
-    <span
-      aria-hidden
-      className={`voice-layer ${className}`}
-      style={{
-        display: 'inline-block',
-        minWidth: '140px',
-        opacity: isVisible ? 1 : 0,
-        transition: 'opacity 0.25s ease',
-      }}
-      data-voice-typing
-    >
+    <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '140px' }} data-voice-typing>
       {currentText}
       {currentText !== "" && <span className="voice-cursor">▎</span>}
     </span>
