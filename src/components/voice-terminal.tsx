@@ -500,11 +500,11 @@ export function VoiceTerminal() {
                 </div>
               )}
 
-              {/* Disconnect button - small muted circle, only during call */}
+              {/* Disconnect button - red circle with white icon, only during call */}
               {isInCall && (
                 <button
                   onClick={handleEnd}
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-neutral-400 hover:text-red-500 hover:bg-red-50/60 transition-colors"
+                  className="w-7 h-7 rounded-full flex items-center justify-center bg-red-500 hover:bg-red-600 transition-colors"
                   aria-label="Disconnect"
                 >
                   <svg
@@ -513,7 +513,7 @@ export function VoiceTerminal() {
                     height="14"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="currentColor"
+                    stroke="white"
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
