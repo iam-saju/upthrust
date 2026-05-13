@@ -109,14 +109,14 @@ export function VoiceTyping({
 
   if (isServer) {
     return (
-      <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '200px' }}>
+      <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '140px' }}>
         {words[0]}
       </span>
     );
   }
 
   return (
-    <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '200px' }}>
+    <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '140px' }} data-voice-typing>
       {currentText}
       {currentText !== "" && <span className="voice-cursor">▎</span>}
     </span>
