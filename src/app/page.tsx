@@ -3,7 +3,7 @@ import { LabSection } from "@/components/lab-section";
 import { VoiceTyping } from "@/components/voice-typing";
 import { SupportLog } from "@/components/support-log";
 import { CrayonCircle } from "@/components/crayon-circle";
-import { VoiceWidget } from "@/components/voice-widget";
+import { VoiceTerminal } from "@/components/voice-terminal";
 
 export default function Home() {
   return (
@@ -13,10 +13,8 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-16 sm:pt-20 md:pt-24 pb-8 md:pb-10">
           <LabSection id="belief" label="Our Belief">
             <div>
-              <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug max-w-xl" style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
-                Support should sound like
-                <br className="md:hidden" />
-                {" "}your{" "}
+              <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug" style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
+                Support should sound like your{" "}
                 <VoiceTyping
                   words={[
                     "shopkeeper",
@@ -36,11 +34,10 @@ export default function Home() {
                     "ചേട്ടാ",
                   ]}
                   className="voice-layer--inline voice-layer--accent"
-                />
-                <br />
-                {" "}picked up the <span className="text-neutral-950 font-medium inline-block mb-3" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
+                />{" "}
+                picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
               </h1>
-              <div className="max-w-xl space-y-6 pt-2">
+              <div className="max-w-xl space-y-6 pt-8">
                 <p>
                   At{" "}
                   <CrayonCircle>
@@ -61,7 +58,7 @@ export default function Home() {
         </div>
 
         {/* ── Documentary image ────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-6 sm:mt-8 md:mt-10 mb-2 sm:mb-3 md:mb-4">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-6 md:mt-8">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div className="documentary-frame relative w-full max-w-xl aspect-4/3 md:aspect-3/2 overflow-hidden bg-neutral-200">
@@ -79,7 +76,7 @@ export default function Home() {
         </div>
 
         {/* ── Support transcript ──────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-2 sm:pt-3 md:pt-4 pb-8 sm:pb-10 md:pb-12">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-[50px]">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div>
@@ -89,7 +86,7 @@ export default function Home() {
         </div>
 
         {/* ── Agents + Mission ────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 pt-10 sm:pt-14 md:pt-20 pb-12 sm:pb-16 md:pb-20">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-8 md:mt-[50px] pb-12">
           <LabSection id="agents" label="Our Agents">
             <div>
               <div className="max-w-xl space-y-6">
@@ -99,31 +96,32 @@ export default function Home() {
                   callbacks, and small doubts.
                 </p>
               </div>
-              <div className="max-w-xl space-y-2 text-neutral-800 pt-6">
+              <div className="max-w-xl space-y-2 text-neutral-800 pt-4 md:pt-6">
                 <p>No stiff scripts.</p>
                 <p>No awkward translations.</p>
                 <p>Just a voice that knows how to respond.</p>
               </div>
+
+              <div className="pt-4 pb-6 md:pt-8 md:pb-8">
+                <VoiceTerminal />
+              </div>
             </div>
           </LabSection>
 
-          <div className="mt-10 sm:mt-12 md:mt-14">
+          <div className="mt-8 md:mt-[50px]">
             <LabSection id="mission" label="The Mission">
             <div className="max-w-xl space-y-6">
               <p>
-                We want every customer to feel heard in the language they trust.
+                Every customer wants to feel understood.
               </p>
               <p>
-                When support feels familiar, a business stops feeling distant.
+                Not translated. Not approximated. Understood.
               </p>
               <div className="space-y-1.5 text-neutral-800">
-                <p>This is more than AI.</p>
                 <p>
-                  <strong className="font-medium text-neutral-950">
-                    This is Buoyancy.
-                  </strong>
+                  This is <strong className="font-medium text-neutral-950">Buoyancy</strong>
                 </p>
-                <p>A new voice layer for Indian businesses.</p>
+                <p>a voice layer built for the way India actually speaks.</p>
               </div>
               <div className="flex flex-col gap-7 pt-4 items-start sm:flex-row sm:items-center">
                 <a
@@ -158,7 +156,6 @@ export default function Home() {
           </div>
         </div>
       </main>
-      <VoiceWidget />
     </>
   );
 }

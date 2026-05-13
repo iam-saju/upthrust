@@ -105,7 +105,7 @@ body::after {
     border: 1px solid rgba(0, 0, 0, 0.06);
     border-radius: 16px;
     padding: 16px 18px;
-    margin-top: 12px;
+    margin-top: 8px;
     margin-bottom: 16px;
     width: 100%;
     max-width: 36rem;
@@ -117,7 +117,7 @@ body::after {
 @media (min-width: 768px) {
     .support-log {
         padding: 24px 26px;
-        margin-top: 20px;
+        margin-top: 12px;
         margin-bottom: 24px;
         min-height: 60px;
     }
@@ -147,6 +147,8 @@ body::after {
     text-align: right;
     align-self: flex-end;
     max-width: 75%;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 @media (min-width: 768px) {
@@ -167,6 +169,8 @@ body::after {
     color: rgba(17, 17, 17, 0.82);
     min-height: 28px;
     align-self: flex-start;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 @media (min-width: 768px) {

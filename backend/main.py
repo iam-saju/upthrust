@@ -4,6 +4,7 @@ import httpx
 import logging
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,7 @@ app.add_middleware(
     allow_origins=[os.getenv("ALLOWED_ORIGIN", "*")],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Session-ID", "X-User-Text", "X-Agent-Text", "X-Detected-Lang"],
 )
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
@@ -52,15 +54,24 @@ Current company: Buoyancy Labs - We build voice AI agents for Indian businesses.
 """
 
 LANGUAGE_MAP = {
-    "en": "en-IN",
-    "hi": "hi-IN",
-    "ml": "ml-IN",
+    "en-IN": "en-IN",
+    "hi-IN": "hi-IN",
+    "ml-IN": "ml-IN",
+    "ta-IN": "ta-IN",
 }
 
 SPEAKER_MAP = {
     "en-IN": "shubh",
     "hi-IN": "shubh",
     "ml-IN": "shubh",
+    "ta-IN": "shubh",
+}
+
+GREETINGS_MAP = {
+    "en-IN": "Hello! I am Ra.One, your voice assistant from Buoyancy Labs. How can I help you today?",
+    "hi-IN": "नमस्ते! मैं बॉयन्सी लैब्स से रा.वन हूँ। मैं आपकी कैसे मदद कर सकता हूँ?",
+    "ml-IN": "നമസ്കാരം! ഞാൻ ബോയൻസി ലാബ്സിൽ നിന്നുള്ള രാ.വൺ ആണ്. ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?",
+    "ta-IN": "வணக்கம்! நான் பாயன்சி லேப்ஸிலிருந்து ரா.வன். நான் உங்களுக்கு எப்படி உதவலாம்?",
 }
 
 # Simple in-memory conversation memory (session_id → list of messages)
@@ -69,49 +80,62 @@ sessions: dict[str, list[dict]] = {}
 MAX_HISTORY = 5  # Keep last 5 exchanges
 
 
-async def stt(audio_bytes: bytes, language_code: str) -> str:
-    """Send audio to Sarvam STT, return transcribed text."""
-    logger.info(f"STT request: {len(audio_bytes)} bytes, language={language_code}")
+async def stt(audio_bytes: bytes, language_code: str = "unknown") -> tuple[str, str]:
+    """Send audio to Sarvam STT, return (transcribed_text, detected_language_code)."""
+    logger.info(f"STT request: {len(audio_bytes)} bytes, language_code={language_code}")
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # For English, try without language_code first (auto-detect)
-        # For Indic languages, always specify language_code
-        language_param = language_code if language_code != "en-IN" else "unknown"
-        
-        # Try webm first, fallback to wav if needed
-        for filename, content_type in [("audio.webm", "audio/webm"), ("audio.wav", "audio/wav")]:
-            files = {"file": (filename, audio_bytes, content_type)}
-            data = {
-                "model": "saaras:v3",
-                "mode": "transcribe",
-                "language_code": language_param,
-            }
-            headers = {"api-subscription-key": SARVAM_API_KEY}
-            
-            try:
-                resp = await client.post(
-                    f"{SARVAM_BASE}/speech-to-text",
-                    files=files,
-                    data=data,
-                    headers=headers,
-                )
+    import asyncio
+    
+    max_retries = 2
+    for attempt in range(max_retries + 1):
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Try webm first, fallback to wav if needed
+            for filename, content_type in [("audio.webm", "audio/webm"), ("audio.wav", "audio/wav")]:
+                files = {"file": (filename, audio_bytes, content_type)}
+                data = {
+                    "model": "saaras:v3",
+                    "mode": "transcribe",
+                    "language_code": language_code,
+                }
+                headers = {"api-subscription-key": SARVAM_API_KEY}
                 
-                if resp.status_code == 200:
-                    result = resp.json()
-                    transcript = result.get("transcript") or ""
-                    detected_lang = result.get("language_code", "unknown")
-                    logger.info(f"STT success: {transcript[:100] if transcript else '(empty)'} (detected: {detected_lang})")
-                    return transcript
-                else:
-                    logger.warning(f"STT failed with {resp.status_code}: {resp.text[:200]}")
+                try:
+                    resp = await client.post(
+                        f"{SARVAM_BASE}/speech-to-text",
+                        files=files,
+                        data=data,
+                        headers=headers,
+                    )
+                    
+                    if resp.status_code == 200:
+                        result = resp.json()
+                        transcript = result.get("transcript") or ""
+                        detected_lang = result.get("language_code", language_code)
+                        logger.info(f"STT success: {transcript[:100] if transcript else '(empty)'} (detected: {detected_lang})")
+                        return transcript, detected_lang
+                    elif resp.status_code == 429:
+                        if attempt < max_retries:
+                            wait_time = 2 ** attempt
+                            logger.warning(f"STT rate limited (429), retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(wait_time)
+                            break  # break inner loop, retry outer loop
+                        else:
+                            raise HTTPException(status_code=429, detail="STT rate limit exceeded")
+                    else:
+                        logger.warning(f"STT failed with {resp.status_code}: {resp.text[:200]}")
+                        if content_type == "audio/wav":
+                            if resp.status_code == 429 and attempt < max_retries:
+                                wait_time = 2 ** attempt
+                                logger.warning(f"STT rate limited (429), retrying in {wait_time}s")
+                                await asyncio.sleep(wait_time)
+                                break
+                            raise HTTPException(status_code=400, detail=f"STT error: {resp.text}")
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"STT exception: {e}")
                     if content_type == "audio/wav":
-                        raise HTTPException(status_code=400, detail=f"STT error: {resp.text}")
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"STT exception: {e}")
-                if content_type == "audio/wav":
-                    raise HTTPException(status_code=500, detail=f"STT failed: {str(e)}")
+                        raise HTTPException(status_code=500, detail=f"STT failed: {str(e)}")
     
     raise HTTPException(status_code=400, detail="STT failed for all formats")
 
@@ -136,7 +160,7 @@ async def llm(user_text: str, language_code: str, session_id: str) -> str:
             "model": "sarvam-30b",
             "messages": messages,
             "temperature": 0.5,
-            "max_tokens": 150,
+            "max_tokens": 2000,
         }
         headers = {
             "Authorization": f"Bearer {SARVAM_API_KEY}",
@@ -173,10 +197,10 @@ async def tts_stream(text: str, language_code: str):
             "text": text,
             "model": "bulbul:v3",
             "target_language_code": language_code,
-            "speaker": SPEAKER_MAP.get(language_code, "shubh"),
             "output_audio_codec": "mp3",
             "pace": 1.1,
         }
+        logger.info(f"TTS request: language={language_code}, text={text[:50]}...")
         headers = {
             "api-subscription-key": SARVAM_API_KEY,
             "Content-Type": "application/json",
@@ -208,26 +232,27 @@ async def tts_stream(text: str, language_code: str):
 @app.post("/talk")
 async def talk(
     audio: UploadFile = File(...),
-    language: str = Form("en"),
     session_id: str = Form(""),
+    language: str = Form("en-IN"),
 ):
     """Main demo endpoint: audio in → AI voice out (streaming)."""
-    logger.info(f"Talk request: language={language}, session={session_id}, content_type={audio.content_type}")
+    logger.info(f"Talk request: session={session_id}, language={language}, content_type={audio.content_type}")
     
     if not audio.content_type or not audio.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Audio file required")
-
-    language_code = LANGUAGE_MAP.get(language, "en-IN")
     
     # Generate session ID if not provided
     if not session_id:
         session_id = str(uuid.uuid4())
 
+    # Use frontend's selected language for TTS (fall back to en-IN if not supported)
+    language_code = language if language in SPEAKER_MAP else "en-IN"
+
     try:
-        # 1. STT — speech to text
+        # 1. STT — speech to text (uses selected language)
         audio_bytes = await audio.read()
         logger.info(f"Audio size: {len(audio_bytes)} bytes")
-        user_text = await stt(audio_bytes, language_code)
+        user_text, detected_lang = await stt(audio_bytes, language_code)
 
         if not user_text or not user_text.strip():
             raise HTTPException(status_code=400, detail="No speech detected")
@@ -247,7 +272,12 @@ async def talk(
         return StreamingResponse(
             tts_stream(response_text, language_code),
             media_type="audio/mpeg",
-            headers={"X-Session-ID": session_id},
+            headers={
+                "X-Session-ID": session_id,
+                "X-User-Text": quote(user_text),
+                "X-Agent-Text": quote(response_text),
+                "X-Detected-Lang": detected_lang,
+            },
         )
     except HTTPException:
         raise
@@ -259,6 +289,17 @@ async def talk(
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "buoyancy-voice-demo"}
+
+
+@app.post("/greet")
+async def greet(language: str = Form("en-IN")):
+    """Return immediate greeting audio for first turn."""
+    language_code = language if language in SPEAKER_MAP else "en-IN"
+    greeting = GREETINGS_MAP.get(language_code, GREETINGS_MAP["en-IN"])
+    return StreamingResponse(
+        tts_stream(greeting, language_code),
+        media_type="audio/mpeg",
+    )
 
 
 @app.post("/clear-session")
