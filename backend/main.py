@@ -20,14 +20,16 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Buoyancy Labs Voice Demo")
 
-# CORS for Netlify frontend
+# CORS for frontend
+allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGIN", "*").split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN", "*")],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Session-ID", "X-User-Text", "X-Agent-Text", "X-Detected-Lang"],
 )
+logger.info(f"CORS allowed origins: {allowed_origins}")
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 if not SARVAM_API_KEY:
