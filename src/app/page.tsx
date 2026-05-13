@@ -13,8 +13,7 @@ export default function Home() {
           <LabSection id="belief" label="Our Belief">
             <div>
               <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug" style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
-                Support should sound
-                <br />
+                Support should sound<br className="md:hidden" />
                 {" "}like your{" "}
                 <VoiceTyping
                   words={[
@@ -36,7 +35,7 @@ export default function Home() {
                   ]}
                   className="voice-layer--inline voice-layer--accent"
                 />
-                <br />
+                <br className="md:hidden" />
                 {" "}picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
               </h1>
               <div className="max-w-xl space-y-6 pt-8">

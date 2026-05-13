@@ -109,14 +109,14 @@ export function VoiceTyping({
 
   if (isServer) {
     return (
-      <span aria-hidden className={`voice-layer ${className}`}>
+      <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '140px' }}>
         {words[0]}
       </span>
     );
   }
 
   return (
-    <span aria-hidden className={`voice-layer ${className}`}>
+    <span aria-hidden className={`voice-layer ${className}`} style={{ display: 'inline-block', minWidth: '140px' }}>
       {currentText}
       {currentText !== "" && <span className="voice-cursor">▎</span>}
     </span>
