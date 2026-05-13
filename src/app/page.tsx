@@ -14,7 +14,8 @@ export default function Home() {
           <LabSection id="belief" label="Our Belief">
             <div>
               <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug" style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
-                Support should sound like your{" "}
+                Support should sound<br className="md:hidden" />
+                {" "}like your{" "}
                 <VoiceTyping
                   words={[
                     "shopkeeper",
@@ -34,8 +35,9 @@ export default function Home() {
                     "ചേട്ടാ",
                   ]}
                   className="voice-layer--inline voice-layer--accent"
-                />{" "}
-                picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
+                />
+                <br className="md:hidden" />
+                {" "}picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
               </h1>
               <div className="max-w-xl space-y-6 pt-8">
                 <p>
@@ -76,7 +78,7 @@ export default function Home() {
         </div>
 
         {/* ── Support transcript ──────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-[50px]">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-6 md:mt-8">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.28fr)_minmax(0,0.72fr)] gap-x-10 md:gap-x-14 lg:gap-x-24">
             <div className="hidden md:block" />
             <div>
@@ -86,7 +88,7 @@ export default function Home() {
         </div>
 
         {/* ── Agents + Mission ────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-8 md:mt-[50px] pb-12">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 md:px-14 lg:px-20 mt-6 md:mt-8 pb-12">
           <LabSection id="agents" label="Our Agents">
             <div>
               <div className="max-w-xl space-y-6">
@@ -102,7 +104,7 @@ export default function Home() {
                 <p>Just a voice that knows how to respond.</p>
               </div>
 
-              <div className="pt-4 pb-6 md:pt-8 md:pb-8">
+              <div className="pt-2 pb-4 md:pt-4 md:pb-6">
                 <VoiceTerminal />
               </div>
             </div>
