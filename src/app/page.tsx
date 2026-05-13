@@ -2,7 +2,6 @@ import Image from "next/image";
 import { LabSection } from "@/components/lab-section";
 import { VoiceTyping } from "@/components/voice-typing";
 import { SupportLog } from "@/components/support-log";
-import { CrayonCircle } from "@/components/crayon-circle";
 import { VoiceTerminal } from "@/components/voice-terminal";
 
 export default function Home() {
@@ -42,14 +41,18 @@ export default function Home() {
               <div className="max-w-xl space-y-6 pt-8">
                 <p>
                   At{" "}
-                  <CrayonCircle>
-                    <strong
-                      className="font-medium text-neutral-950"
-                      style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif', letterSpacing: '-0.01em' }}
-                    >
-                      Buoyancy Labs
-                    </strong>
-                  </CrayonCircle>
+                  <span
+                    className="font-medium text-neutral-950"
+                    style={{
+                      fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                      letterSpacing: '-0.01em',
+                      background: 'rgba(201, 122, 58, 0.12)',
+                      padding: '0.05em 0.25em',
+                      borderRadius: '3px',
+                    }}
+                  >
+                    Buoyancy Labs
+                  </span>
                   , we are building voice AI that understands how Indians
                   actually speak — the mixed language, the shortcuts, the
                   warmth, and the pauses.

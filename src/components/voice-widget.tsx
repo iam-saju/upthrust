@@ -5,77 +5,63 @@ import { useState, useRef, useCallback, useEffect } from "react";
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const MAX_RECORDING_SECONDS = 25;
-
-const LANGUAGES = [
-  { code: "en", label: "English" },
-  { code: "hi", label: "हिंदी" },
-  { code: "ml", label: "മലയാളം" },
-];
+type CallState = "idle" | "listening" | "processing" | "speaking";
 
 export function VoiceWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [language, setLanguage] = useState("en");
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [status, setStatus] = useState("Tap to start");
-  const [timeLeft, setTimeLeft] = useState(MAX_RECORDING_SECONDS);
+  const [isClosed, setIsClosed] = useState(false);
+  const [state, setState] = useState<CallState>("idle");
+  const [vadProgress, setVadProgress] = useState(0);
+  const [displayText, setDisplayText] = useState("");
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const sessionIdRef = useRef<string>("");
+  const streamRef = useRef<MediaStream | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number>(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const silenceStartRef = useRef<number>(0);
+  const speechDetectedRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const sessionIdRef = useRef<string>("");
+  const isRecordingRef = useRef(false);
+  const chunksRef = useRef<Blob[]>([]);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const speechStartTimeRef = useRef<number>(0);
 
-  useEffect(() => {
-    if (isRecording && timeLeft > 0) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            stopRecording();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+  const SILENCE_THRESHOLD = 1.5;
+  const MIN_SPEECH_MS = 400;
+
+  const cleanup = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRecording]);
-
-  const playAudio = useCallback(async (audioBlob: Blob) => {
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close();
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       URL.revokeObjectURL(audioRef.current.src);
     }
-
-    const url = URL.createObjectURL(audioBlob);
-    const audio = new Audio(url);
-    audioRef.current = audio;
-
-    audio.onended = () => {
-      URL.revokeObjectURL(url);
-      setStatus("Tap to start");
-    };
-
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      setStatus("Playback error. Try again.");
-    };
-
-    setStatus("Playing response...");
-    await audio.play();
+    if (recorderRef.current && isRecordingRef.current) {
+      try {
+        recorderRef.current.stop();
+      } catch {}
+    }
+    streamRef.current = null;
+    analyserRef.current = null;
+    audioCtxRef.current = null;
+    isRecordingRef.current = false;
   }, []);
 
   const sendToBackend = useCallback(
     async (audioBlob: Blob) => {
-      const formData = new FormData();
-      formData.append("audio", audioBlob, "recording.webm");
-      formData.append("language", language);
-      formData.append("session_id", sessionIdRef.current);
+      setState("processing");
 
       try {
+        const formData = new FormData();
+        formData.append("audio", audioBlob, "recording.webm");
+        formData.append("session_id", sessionIdRef.current);
+
         const resp = await fetch(`${BACKEND_URL}/talk`, {
           method: "POST",
           body: formData,
@@ -86,73 +72,203 @@ export function VoiceWidget() {
           throw new Error(errText || "Backend error");
         }
 
-        // Capture session ID for conversation memory
         const newSessionId = resp.headers.get("X-Session-ID");
         if (newSessionId) sessionIdRef.current = newSessionId;
 
-        // Stream the audio response
-        const audioBlob = await resp.blob();
-        await playAudio(audioBlob);
-      } catch (err: any) {
-        setStatus(err.message || "Error. Try again.");
-      } finally {
-        setIsProcessing(false);
+        const userText = resp.headers.get("X-User-Text");
+        const agentText = resp.headers.get("X-Agent-Text");
+        if (userText) {
+          const decoded = decodeURIComponent(userText);
+          setDisplayText(decoded);
+        }
+        if (agentText) {
+          const decoded = decodeURIComponent(agentText);
+          setDisplayText((prev) => prev + "\n" + decoded);
+        }
+
+        const audioBlobResponse = await resp.blob();
+        playAudio(audioBlobResponse);
+      } catch {
+        setDisplayText("Error. Try again.");
+        startListening();
       }
     },
-    [language, playAudio]
+    []
   );
 
-  const startRecording = useCallback(async () => {
+  const startListening = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const audioCtx = new AudioContext();
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      silenceStartRef.current = 0;
+      speechDetectedRef.current = false;
+      setVadProgress(0);
+      setState("listening");
+
+      const checkSilence = () => {
+        if (!analyserRef.current) return;
+
+        const buffer = new Uint8Array(analyserRef.current.fftSize);
+        analyserRef.current.getByteTimeDomainData(buffer);
+
+        let sum = 0;
+        for (let i = 0; i < buffer.length; i++) {
+          const v = (buffer[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buffer.length);
+
+        if (rms > 0.02) {
+          if (!speechDetectedRef.current) {
+            speechStartTimeRef.current = performance.now();
+          }
+          silenceStartRef.current = 0;
+          speechDetectedRef.current = true;
+          setVadProgress(0);
+        } else {
+          if (speechDetectedRef.current) {
+            const speechDuration = performance.now() - speechStartTimeRef.current;
+            if (speechDuration < MIN_SPEECH_MS) {
+              rafRef.current = requestAnimationFrame(checkSilence);
+              return;
+            }
+
+            if (silenceStartRef.current === 0) {
+              silenceStartRef.current = performance.now();
+            } else {
+              const silenceDuration =
+                (performance.now() - silenceStartRef.current) / 1000;
+              const progress = Math.min(silenceDuration / SILENCE_THRESHOLD, 1);
+              setVadProgress(progress);
+
+              if (silenceDuration >= SILENCE_THRESHOLD) {
+                stopRecording();
+                return;
+              }
+            }
+          }
+        }
+
+        rafRef.current = requestAnimationFrame(checkSilence);
+      };
+
       const mimeType = MediaRecorder.isTypeSupported("audio/webm")
         ? "audio/webm"
         : "audio/ogg";
       const recorder = new MediaRecorder(stream, { mimeType });
-      audioChunksRef.current = [];
+      chunksRef.current = [];
+      recorderRef.current = recorder;
+      isRecordingRef.current = true;
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        await sendToBackend(audioBlob);
-        stream.getTracks().forEach((t) => t.stop());
+        isRecordingRef.current = false;
+        const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+        if (audioBlob.size > 1000) {
+          await sendToBackend(audioBlob);
+        } else {
+          startListening();
+        }
       };
 
-      mediaRecorderRef.current = recorder;
       recorder.start();
-      setIsRecording(true);
-      setTimeLeft(MAX_RECORDING_SECONDS);
-      setStatus(`Listening... ${MAX_RECORDING_SECONDS}s`);
+      rafRef.current = requestAnimationFrame(checkSilence);
     } catch {
-      setStatus("Mic permission denied");
+      setState("idle");
     }
   }, [sendToBackend]);
 
   const stopRecording = useCallback(() => {
-    mediaRecorderRef.current?.stop();
-    setIsRecording(false);
-    setIsProcessing(true);
-    setStatus("Processing...");
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (recorderRef.current && isRecordingRef.current) {
+      recorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close();
+    }
+    streamRef.current = null;
+    analyserRef.current = null;
+    audioCtxRef.current = null;
+    isRecordingRef.current = false;
+    setVadProgress(0);
   }, []);
 
-  const handleClose = useCallback(() => {
-    if (isRecording) {
-      mediaRecorderRef.current?.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    if (audioRef.current) {
+  const playAudio = useCallback(
+    async (audioBlob: Blob) => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+
+      const url = URL.createObjectURL(audioBlob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        startListening();
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        startListening();
+      };
+
+      setState("speaking");
+      await audio.play();
+    },
+    [startListening]
+  );
+
+  const interrupt = useCallback(() => {
+    if (state === "speaking" && audioRef.current) {
       audioRef.current.pause();
+      URL.revokeObjectURL(audioRef.current.src);
+      audioRef.current = null;
+      startListening();
     }
+  }, [state, startListening]);
+
+  const handleCall = useCallback(() => {
+    console.log("Call button clicked");
+    sessionIdRef.current = "";
+    setDisplayText("");
+    startListening();
+  }, [startListening]);
+
+  const handleHangUp = useCallback(() => {
+    cleanup();
     setIsOpen(false);
-    setStatus("Tap to start");
-    setIsProcessing(false);
-    setTimeLeft(MAX_RECORDING_SECONDS);
-  }, [isRecording]);
+    setIsClosed(true);
+    setState("idle");
+    setDisplayText("");
+    setVadProgress(0);
+  }, [cleanup]);
+
+  useEffect(() => {
+    return () => cleanup();
+  }, [cleanup]);
+
+  if (isClosed) {
+    return null;
+  }
 
   if (!isOpen) {
     return (
@@ -181,15 +297,15 @@ export function VoiceWidget() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-72 bg-white border border-neutral-200 rounded-2xl shadow-xl p-5">
+    <div className="fixed bottom-6 right-6 z-50 w-80 bg-white border border-neutral-200 rounded-2xl shadow-xl p-5">
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-medium text-neutral-900">
-          Talk to RA-1
+          Call with RA-1
         </span>
         <button
-          onClick={handleClose}
+          onClick={handleHangUp}
           className="text-neutral-400 hover:text-neutral-600 transition-colors"
-          aria-label="Close"
+          aria-label="Hang up"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -208,43 +324,112 @@ export function VoiceWidget() {
         </button>
       </div>
 
-      <select
-        value={language}
-        onChange={(e) => setLanguage(e.target.value)}
-        disabled={isRecording || isProcessing}
-        className="w-full mb-4 px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white text-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-300 disabled:opacity-50"
+      <div
+        className="relative w-48 h-48 mx-auto mb-4 cursor-pointer select-none"
+        onClick={interrupt}
       >
-        {LANGUAGES.map((lang) => (
-          <option key={lang.code} value={lang.code}>
-            {lang.label}
-          </option>
-        ))}
-      </select>
+        <div
+          className={`absolute inset-0 rounded-full transition-all duration-300 ${
+            state === "listening"
+              ? "bg-purple-100"
+              : state === "processing"
+              ? "bg-amber-100"
+              : state === "speaking"
+              ? "bg-teal-100"
+              : "bg-neutral-100"
+          }`}
+        />
 
-      <button
-        onClick={isRecording ? stopRecording : startRecording}
-        disabled={isProcessing}
-        className={`w-full py-3 rounded-lg text-sm font-medium transition-colors ${
-          isRecording
-            ? "bg-red-500 text-white hover:bg-red-600"
-            : isProcessing
-            ? "bg-neutral-100 text-neutral-400 cursor-not-allowed"
-            : "bg-neutral-900 text-white hover:bg-neutral-800"
-        }`}
-      >
-        {isRecording ? `⏹ Stop (${timeLeft}s)` : isProcessing ? "Processing..." : "🎤 Start"}
-      </button>
+        {state === "listening" && (
+          <>
+            <div
+              className="absolute inset-4 rounded-full border-2 border-purple-300 animate-ping"
+              style={{ animationDuration: "2s" }}
+            />
+            <div
+              className="absolute inset-8 rounded-full border border-purple-200 animate-ping"
+              style={{ animationDuration: "2.5s", animationDelay: "0.5s" }}
+            />
+          </>
+        )}
 
-      <p className="text-xs text-neutral-400 text-center mt-3">{status}</p>
-
-      {isRecording && (
-        <div className="mt-3 h-1 bg-neutral-100 rounded-full overflow-hidden">
+        {state === "speaking" && (
           <div
-            className="h-full bg-red-500 transition-all duration-1000 ease-linear"
-            style={{ width: `${(timeLeft / MAX_RECORDING_SECONDS) * 100}%` }}
+            className="absolute inset-4 rounded-full border-2 border-teal-300 animate-pulse"
+            style={{ animationDuration: "1s" }}
           />
+        )}
+
+        <div
+          className={`absolute inset-12 rounded-full flex items-center justify-center transition-colors duration-300 ${
+            state === "listening"
+              ? "bg-purple-500"
+              : state === "processing"
+              ? "bg-amber-500"
+              : state === "speaking"
+              ? "bg-teal-500"
+              : "bg-neutral-400"
+          }`}
+        >
+          {state === "processing" ? (
+            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" x2="12" y1="19" y2="22" />
+            </svg>
+          )}
+        </div>
+
+        {state === "listening" && vadProgress > 0 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-28 h-1 bg-neutral-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-purple-500 transition-all duration-100"
+              style={{ width: `${vadProgress * 100}%` }}
+            />
+          </div>
+        )}
+      </div>
+
+      {displayText && (
+        <div className="text-xs text-neutral-500 text-center mb-3 max-h-20 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+          {displayText}
         </div>
       )}
+
+      {state === "idle" ? (
+        <button
+          onClick={handleCall}
+          className="w-full py-3 rounded-lg text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors"
+        >
+          Call
+        </button>
+      ) : (
+        <button
+          onClick={handleHangUp}
+          className="w-full py-3 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+        >
+          Hang Up
+        </button>
+      )}
+
+      <p className="text-xs text-neutral-400 text-center mt-3">
+        {state === "idle" && "Tap Call to start"}
+        {state === "listening" && "Listening..."}
+        {state === "processing" && "Thinking..."}
+        {state === "speaking" && "Tap orb to interrupt"}
+      </p>
     </div>
   );
 }
