@@ -41,25 +41,20 @@ export default function Home() {
               <div className="max-w-xl space-y-6 pt-8">
                 <p>
                   At{" "}
-                  <span
-                    className="font-medium text-neutral-950 relative inline-block"
-                    style={{
-                      fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                      letterSpacing: '-0.01em',
-                    }}
-                  >
+                  <span className="relative inline-block">
                     <span
-                      style={{
-                        position: 'absolute',
-                        top: '-6px',
-                        left: '0.15em',
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        background: '#c97a3a',
-                      }}
+                      className="absolute -top-[3px] left-[-6px] right-[-6px] h-[1.5px]"
+                      style={{ background: '#c97a3a' }}
                     />
-                    Buoyancy Labs
+                    <span
+                      className="font-medium text-neutral-950"
+                      style={{
+                        fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                        letterSpacing: '-0.01em',
+                      }}
+                    >
+                      Buoyancy Labs
+                    </span>
                   </span>
                   , we are building voice AI that understands how Indians
                   actually speak — the mixed language, the shortcuts, the
