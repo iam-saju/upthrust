@@ -15,6 +15,7 @@ export default function Home() {
               <h1 className="text-xl md:text-2xl lg:text-[1.65rem] font-normal text-neutral-600 leading-snug" style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
                 Support should sound<br className="md:hidden" />
                 {" "}like your{" "}
+                <br className="hidden md:block" />
                 <VoiceTyping
                   words={[
                     "shopkeeper",
@@ -36,25 +37,23 @@ export default function Home() {
                   className="voice-layer--inline voice-layer--accent"
                 />
                 <br className="md:hidden" />
+                <br className="hidden md:block" />
                 {" "}picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
               </h1>
               <div className="max-w-xl space-y-6 pt-8">
                 <p>
                   At{" "}
-                  <span className="relative inline-block">
-                    <span
-                      className="absolute -top-[3px] left-[-6px] right-[-6px] h-[1.5px]"
-                      style={{ background: '#c97a3a' }}
-                    />
-                    <span
-                      className="font-medium text-neutral-950"
-                      style={{
-                        fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                        letterSpacing: '-0.01em',
-                      }}
-                    >
-                      Buoyancy Labs
-                    </span>
+                  <span
+                    className="font-medium text-neutral-950"
+                    style={{
+                      fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                      letterSpacing: '-0.01em',
+                      background: 'rgba(122, 158, 122, 0.12)',
+                      padding: '0.05em 0.25em',
+                      borderRadius: '3px',
+                    }}
+                  >
+                    Buoyancy Labs
                   </span>
                   , we are building voice AI that understands how Indians
                   actually speak — the mixed language, the shortcuts, the
