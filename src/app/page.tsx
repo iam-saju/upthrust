@@ -36,8 +36,7 @@ export default function Home() {
                   className="voice-layer--inline voice-layer--accent"
                 />
                 <br className="md:hidden" />
-                <br className="hidden md:block" />
-                picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
+                {" "}picked up the <span className="text-neutral-950 font-medium" style={{ fontFamily: 'var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif', fontSize: '1.12em', letterSpacing: '-0.02em' }}>call</span>.
               </h1>
               <div className="max-w-xl space-y-6 pt-8">
                 <p>
