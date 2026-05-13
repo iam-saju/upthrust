@@ -51,13 +51,6 @@ SPEAKER_MAP = {
     "ta-IN": "shubh",
 }
 
-GREETINGS_MAP = {
-    "en-IN": "Hello! I am Ra.One, your voice assistant from Buoyancy Labs. How can I help you today?",
-    "hi-IN": "नमस्ते! मैं बॉयन्सी लैब्स से रा.वन हूँ। मैं आपकी कैसे मदद कर सकता हूँ?",
-    "ml-IN": "നമസ്കാരം! ഞാൻ ബോയൻസി ലാബ്സിൽ നിന്നുള്ള രാ.വൺ ആണ്. ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?",
-    "ta-IN": "வணக்கம்! நான் பாயன்சி லேப்ஸிலிருந்து ரா.வன். நான் உங்களுக்கு எப்படி உதவலாம்?",
-}
-
 LANGUAGE_NAME_MAP = {
     "en-IN": "English",
     "hi-IN": "Hindi",
@@ -70,6 +63,13 @@ FALLBACK_MAP = {
     "hi-IN": "माफ़ कीजिए, मुझे समझ नहीं आया। क्या आप दोबारा बोल सकते हैं?",
     "ml-IN": "ക്ഷമിക്കണം, എനിക്ക് മനസ്സിലായില്ല. ഒന്നുകൂടി പറയാമോ?",
     "ta-IN": "மன்னிக்கவும், எனக்கு புரியவில்லை. மீண்டும் சொல்ல முடியுமா?",
+}
+
+GREETINGS_MAP = {
+    "en-IN": "Hello! I am Ra.One, your voice assistant from Buoyancy Labs. How can I help you today?",
+    "hi-IN": "नमस्ते! मैं बॉयन्सी लैब्स से रा.वन हूँ। मैं आपकी कैसे मदद कर सकता हूँ?",
+    "ml-IN": "നമസ്കാരം! ഞാൻ ബോയൻസി ലാബ്സിൽ നിന്നുള്ള രാ.വൺ ആണ്. ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?",
+    "ta-IN": "வணக்கம்! நான் பாயன்சி லேப்ஸிலிருந்து ரா.வன். நான் உங்களுக்கு எப்படி உதவலாம்?",
 }
 
 # Simple in-memory conversation memory (session_id → list of messages)
@@ -276,7 +276,7 @@ async def talk(
         
         # Fallback if LLM returns empty or None
         if not response_text or not response_text.strip():
-            response_text = "I'm sorry, I didn't understand that. Could you please try again?"
+            response_text = FALLBACK_MAP.get(language_code, FALLBACK_MAP["en-IN"])
             logger.warning("LLM returned empty, using fallback response")
 
         # 3. TTS — stream audio back
