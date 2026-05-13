@@ -65,41 +65,41 @@ export function VoiceTyping({
       }, delay);
     }
 
-    function cycleWord(word: string, step: number): void {
+    function cycleWord(word: string, phase: string, index: number): void {
       const graphemes = getGraphemes(word);
       const total = graphemes.length;
 
-      if (step < total) {
-        setCurrentText(graphemes.slice(0, step + 1).join(""));
-        const hesitation = Math.random() < 0.05 ? 400 : 0;
-        const delay = randomBetween(80, 150) + hesitation;
-        schedule(() => cycleWord(word, step + 1), delay);
-        return;
-      }
-
-      if (step === total) {
+      if (phase === "typing") {
+        if (index < total) {
+          setCurrentText(graphemes.slice(0, index + 1).join(""));
+          const hesitation = Math.random() < 0.05 ? 400 : 0;
+          const delay = randomBetween(80, 150) + hesitation;
+          schedule(() => cycleWord(word, "typing", index + 1), delay);
+          return;
+        }
         const holdDelay = randomBetween(3500, 5500);
-        schedule(() => cycleWord(word, step + 1), holdDelay);
+        schedule(() => cycleWord(word, "deleting", total), holdDelay);
         return;
       }
 
-      if (step < total * 2) {
-        const remaining = total - (step - total) - 1;
-        setCurrentText(graphemes.slice(0, remaining).join(""));
-        const delay = randomBetween(40, 90);
-        schedule(() => cycleWord(word, step + 1), delay);
+      if (phase === "deleting") {
+        if (index > 0) {
+          setCurrentText(graphemes.slice(0, index - 1).join(""));
+          const delay = randomBetween(40, 90);
+          schedule(() => cycleWord(word, "deleting", index - 1), delay);
+          return;
+        }
+        setCurrentText("");
+        const nextWordIndex = (wordIndexRef.current + 1) % words.length;
+        wordIndexRef.current = nextWordIndex;
+        const gapDelay = randomBetween(400, 700);
+        schedule(() => cycleWord(words[nextWordIndex], "typing", 0), gapDelay);
         return;
       }
-
-      setCurrentText("");
-      const nextWordIndex = (wordIndexRef.current + 1) % words.length;
-      wordIndexRef.current = nextWordIndex;
-      const gapDelay = randomBetween(400, 700);
-      schedule(() => cycleWord(words[nextWordIndex], 0), gapDelay);
     }
 
     const initialDelay = randomBetween(1000, 2000);
-    const id = schedule(() => cycleWord(words[0], 0), initialDelay);
+    const id = schedule(() => cycleWord(words[0], "typing", 0), initialDelay);
 
     return () => {
       cancelledRef.current = true;
