@@ -42,15 +42,23 @@ export default function Home() {
                 <p>
                   At{" "}
                   <span
-                    className="font-medium text-neutral-950"
+                    className="font-medium text-neutral-950 relative inline-block"
                     style={{
                       fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
                       letterSpacing: '-0.01em',
-                      background: 'rgba(201, 122, 58, 0.12)',
-                      padding: '0.05em 0.25em',
-                      borderRadius: '3px',
                     }}
                   >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        left: '0.15em',
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: '#c97a3a',
+                      }}
+                    />
                     Buoyancy Labs
                   </span>
                   , we are building voice AI that understands how Indians
