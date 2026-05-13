@@ -344,18 +344,18 @@ export function VoiceTerminal() {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = "#7a9e7a";
-            const textEl = e.currentTarget.querySelector("[data-role='pill-text']");
+            const textEl = e.currentTarget.querySelector("[data-role='pill-text']") as HTMLElement | null;
             if (textEl) textEl.style.color = "#ffffff";
-            const circleEl = e.currentTarget.querySelector("[data-role='pill-circle']");
+            const circleEl = e.currentTarget.querySelector("[data-role='pill-circle']") as HTMLElement | null;
             if (circleEl) circleEl.style.background = "#ffffff";
             const iconEl = e.currentTarget.querySelector("[data-role='pill-icon']");
             if (iconEl) iconEl.setAttribute("stroke", "#7a9e7a");
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = "transparent";
-            const textEl = e.currentTarget.querySelector("[data-role='pill-text']");
+            const textEl = e.currentTarget.querySelector("[data-role='pill-text']") as HTMLElement | null;
             if (textEl) textEl.style.color = "#7a9e7a";
-            const circleEl = e.currentTarget.querySelector("[data-role='pill-circle']");
+            const circleEl = e.currentTarget.querySelector("[data-role='pill-circle']") as HTMLElement | null;
             if (circleEl) circleEl.style.background = "#7a9e7a";
             const iconEl = e.currentTarget.querySelector("[data-role='pill-icon']");
             if (iconEl) iconEl.setAttribute("stroke", "#ffffff");
