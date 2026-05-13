@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const EXCHANGES = [
   { customer: "റീഫണ്ട് കിട്ടിയില്ല.", agent: "റീഫണ്ട് initiate ചെയ്തിട്ടുണ്ട് ma'am." },
@@ -23,10 +23,6 @@ const EXCHANGES = [
   { customer: "payment cut ಆಗಿದೆ.", agent: "refund process start ಮಾಡಿದ್ದೇವೆ sir." },
 ];
 
-const emptySubscribe = () => () => {};
-function getSnapshot() { return false; }
-function getServerSnapshot() { return true; }
-
 function toWords(text: string): string[] {
   return text.split(/\s+/).filter(Boolean);
 }
@@ -40,10 +36,14 @@ function pickRandom(exclude: number): number {
 }
 
 export function SupportLog() {
-  const isServer = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
+  const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [visibleWords, setVisibleWords] = useState(0);
   const [isFadingOut, setIsFadingOut] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const cancelledRef = useRef(false);
   const indexRef = useRef(0);
@@ -141,7 +141,7 @@ export function SupportLog() {
     ));
   };
 
-  if (isServer) {
+  if (!isMounted) {
     return (
       <div aria-hidden className="support-log">
         <div className="support-exchange">
