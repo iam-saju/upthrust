@@ -296,11 +296,14 @@ async def health():
 @app.post("/greet")
 async def greet(language: str = Form("en-IN")):
     """Return immediate greeting audio for first turn."""
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = []
     language_code = language if language in SPEAKER_MAP else "en-IN"
     greeting = GREETINGS_MAP.get(language_code, GREETINGS_MAP["en-IN"])
     return StreamingResponse(
         tts_stream(greeting, language_code),
         media_type="audio/mpeg",
+        headers={"X-Session-ID": session_id},
     )
 
 

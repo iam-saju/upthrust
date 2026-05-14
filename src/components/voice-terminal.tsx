@@ -34,6 +34,11 @@ export function VoiceTerminal() {
   const speechStartTimeRef = useRef<number>(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const selectedLangRef = useRef(selectedLang);
+  useEffect(() => { 
+    selectedLangRef.current = selectedLang; 
+  }, [selectedLang]);
+
   const SILENCE_THRESHOLD = 1.5;
   const MIN_SPEECH_MS = 400;
 
@@ -187,7 +192,7 @@ export function VoiceTerminal() {
         const formData = new FormData();
         formData.append("audio", audioBlob, "recording.webm");
         formData.append("session_id", sessionIdRef.current);
-        formData.append("language", selectedLang);
+      formData.append("language", selectedLangRef.current);
 
         const resp = await fetch(`${BACKEND_URL}/talk`, {
           method: "POST",
@@ -249,13 +254,15 @@ export function VoiceTerminal() {
 
     try {
       const formData = new FormData();
-      formData.append("language", selectedLang);
+      formData.append("language", selectedLangRef.current);
 
       const resp = await fetch(`${BACKEND_URL}/greet`, {
         method: "POST",
         body: formData,
       });
       const audioBlob = await resp.blob();
+      const newSessionId = resp.headers.get("X-Session-ID");
+      if (newSessionId) sessionIdRef.current = newSessionId;
       const url = URL.createObjectURL(audioBlob);
       const audio = new Audio(url);
       audioRef.current = audio;
