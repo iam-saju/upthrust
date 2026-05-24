@@ -1,0 +1,12 @@
+node_modules
+.next
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.env.local
+*.icloud-placeholder
+tsconfig.tsbuildinfo
+*.log
+.DS_Store
