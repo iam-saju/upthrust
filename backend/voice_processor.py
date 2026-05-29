@@ -49,7 +49,9 @@ class RA1CallPreProcessor:
             try:
                 await self._prefetch_identity()
             except Exception as exc:
-                logger.warning("Call Airtable prefetch failed: %s", exc)
+                body = getattr(exc, "response", None)
+                detail = f"{exc} | body={body.text if body else 'N/A'}"
+                logger.warning("Call Airtable prefetch failed: %s", detail)
 
         if is_greeting(text) and not self._session.profile.name:
             if not self._session.known_caller:
@@ -108,7 +110,9 @@ class RA1CallPostProcessor:
                 await add_waitlist_caller(client=self._airtable_client, session=self._session)
                 self._session.waitlist_added = True
             except Exception as exc:
-                logger.warning("Call Airtable write failed: %s", exc)
+                body = getattr(exc, "response", None)
+                detail = f"{exc} | body={body.text if body else 'N/A'}"
+                logger.warning("Call Airtable write failed: %s", detail)
 
         return reply
 
@@ -118,4 +122,6 @@ class RA1CallPostProcessor:
                 await add_waitlist_caller(client=self._airtable_client, session=self._session)
                 self._session.waitlist_added = True
             except Exception as exc:
-                logger.warning("Call-end Airtable write failed: %s", exc)
+                body = getattr(exc, "response", None)
+                detail = f"{exc} | body={body.text if body else 'N/A'}"
+                logger.warning("Call-end Airtable write failed: %s", detail)

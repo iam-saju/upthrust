@@ -154,7 +154,10 @@ def build_call_messages(session: CallSession, user_text: str) -> list[dict[str, 
     if session.known_caller and session.known_record:
         returning_name = (session.known_record.get("name") or "").strip()
         returning_business = (
-            session.known_record.get("aim of your project")
+            session.known_record.get("whats your use")
+            or session.known_record.get("what's your use")
+            or session.known_record.get("what is your use")
+            or session.known_record.get("aim of your project")
             or session.known_record.get("business")
             or session.known_record.get("Business")
             or ""

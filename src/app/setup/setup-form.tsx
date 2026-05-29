@@ -57,12 +57,13 @@ export function SetupForm() {
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        throw new Error(body?.error || "Setup request failed.");
+        throw new Error(body?.error || `Server error ${response.status}.`);
       }
 
       router.push(`/setup/success?business=${encodeURIComponent(form.businessName.trim())}`);
-    } catch {
-      setError("Could not submit right now. Please try again in a minute.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error.";
+      setError(message === "Setup request failed." ? "Airtable rejected the submission. Check field names match the base schema." : message);
       setSubmitting(false);
     }
   }

@@ -451,7 +451,7 @@ class WhatsAppBackendTests(unittest.TestCase):
         self.assertEqual(result, {"id": "rec1"})
         payload = client.post.await_args.kwargs["json"]["fields"]
         self.assertEqual(payload["name"], "Ravi")
-        self.assertEqual(payload["aim of your project"], format_waitlist_business(session.profile))
+        self.assertEqual(payload["whats your use"], format_waitlist_business(session.profile))
 
     def test_create_waitlist_lead_uses_narrow_business_fields(self) -> None:
         client = AsyncMock()

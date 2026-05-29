@@ -299,7 +299,10 @@ def build_messages(session: CallerSession, user_text: str) -> list[dict[str, str
     if session.known_caller and session.known_record:
         returning_name = (session.known_record.get("name") or "").strip()
         returning_business = (
-            session.known_record.get("aim of your project")
+            session.known_record.get("whats your use")
+            or session.known_record.get("what's your use")
+            or session.known_record.get("what is your use")
+            or session.known_record.get("aim of your project")
             or session.known_record.get("business")
             or session.known_record.get("Business")
             or ""
@@ -533,7 +536,9 @@ async def handle_ra1_turn(
         try:
             await prefetch_waitlist_identity(session=session, airtable_client=airtable_client)
         except Exception as exc:
-            logger.warning("RA-1 Airtable prefetch failed: %s", exc)
+            body = getattr(exc, "response", None)
+            detail = f"{exc} | body={body.text if body else 'N/A'}"
+            logger.warning("RA-1 Airtable prefetch failed: %s", detail)
 
     if caller_disputes_known_record(session, user_text):
         clear_known_caller_context(session)
@@ -569,7 +574,9 @@ async def handle_ra1_turn(
             await add_waitlist_caller(client=airtable_client, session=session)
             session.waitlist_added = True
         except Exception as exc:
-            logger.warning("RA-1 Airtable write failed: %s", exc)
+            body = getattr(exc, "response", None)
+            detail = f"{exc} | body={body.text if body else 'N/A'}"
+            logger.warning("RA-1 Airtable write failed: %s", detail)
 
     return TurnResult(reply=reply, source=source, should_close=is_closing(reply))
 

@@ -139,7 +139,7 @@ async def add_waitlist_caller(*, client: httpx.AsyncClient, session: WaitlistSes
         "name": session.profile.name,
         "mail": session.profile.email,
         "phone no": int(normalized_phone) if normalized_phone else 0,
-        "aim of your project": format_waitlist_business(session.profile),
+        "whats your use": format_waitlist_business(session.profile),
         "Question": session.profile.question,
     }
     response = await client.post(

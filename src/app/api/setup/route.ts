@@ -57,10 +57,9 @@ export async function POST(request: Request) {
   try {
     const fields = {
       name,
-      "business name": businessName,
       mail,
       "phone no": Number(normalizedPhone),
-      "aim of your project": aim,
+      "whats your use": `${businessName}: ${aim}`,
     };
 
     const response = await fetch(airtableUrl, {
@@ -81,11 +80,18 @@ export async function POST(request: Request) {
         details,
         fields,
       });
-      return Response.json({ error: "Could not save setup request." }, { status: 500 });
+      const detail = details.slice(0, 500);
+      return Response.json({
+        error: `Airtable error (${response.status}): ${detail}`,
+      }, { status: 500 });
     }
 
     return Response.json({ ok: true });
-  } catch {
-    return Response.json({ error: "Could not save setup request." }, { status: 500 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Airtable fetch threw:", message);
+    return Response.json({
+      error: `Setup request failed: ${message}`,
+    }, { status: 500 });
   }
 }
