@@ -3,40 +3,71 @@ from __future__ import annotations
 import json
 import os
 import unittest
+import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.airtable import (
+    add_waitlist_caller,
+    create_waitlist_lead,
+    find_waitlist_caller,
+    find_waitlist_caller_by_name,
+    format_waitlist_business,
+    update_waitlist_lead,
+    waitlist_business_from_record,
+)
+from backend.conversation import (
+    DEMO_INTRO,
+    DIRECT_LLM_FALLBACK,
+    DIRECT_STT_FALLBACK,
+    PRODUCT_INTRO,
+    DirectCallerSession,
+    DirectSessionStore,
+    business_captured_reply,
+    build_direct_llm_messages,
+    extract_business_type,
+    handle_direct_turn,
+)
 from backend.llm_brain import extract_text_reply
+from backend import llm_brain
+from backend.llm_providers.sarvam import chat_complete, default_chat_model
 from backend.llm_utils import normalize_language
 from backend.ra1 import (
-    BehaviorPlan,
     BUOYANCY_CORE_FACTS,
     RA1_SYSTEM_PROMPT,
-    RenderRequest,
     SessionStore,
-    build_ra1_messages,
-    build_render_request,
+    build_messages,
     cap_reply_sentences,
-    decide_turn,
-    is_buoyancy_question,
-    local_ra1_fallback,
+    extract_name,
+    get_closing,
+    get_fallback,
+    get_greeting,
+    get_stt_fallback,
+    is_closing,
+    is_farewell,
+    is_greeting,
+    is_ready_to_write,
+    sanitize_user_facing_reply,
+    update_profile_from_text,
     validate_user_facing_reply,
 )
 from backend.whatsapp import (
+    AUDIO_REPLY_TIMEOUT,
     StageTimer,
     WhatsAppDeps,
-    add_waitlist_caller,
+    create_tracked_background_task,
     detect_text_language,
     extract_whatsapp_messages,
-    find_waitlist_caller,
+    get_background_recovery,
+    get_fast_ack,
     handle_whatsapp_message,
     message_audio_id,
     message_text_body,
-    returning_caller_facts,
-    stt_fallback_message,
+    send_hybrid_text_reply,
+    should_process_message,
 )
 
 
@@ -60,18 +91,24 @@ class WhatsAppBackendTests(unittest.TestCase):
         os.environ["AIRTABLE_API_KEY"] = "airtable-key"
         os.environ["AIRTABLE_BASE_ID"] = "base-id"
         os.environ["AIRTABLE_WAITLIST_TABLE_NAME"] = "waitinlist"
+        os.environ["CONVERSATION_DETERMINISTIC_MODE"] = "true"
+        import backend.whatsapp as whatsapp
+
+        whatsapp._RECENT_MESSAGE_IDS.clear()
 
     def load_fixture(self, name: str) -> dict:
         return json.loads((FIXTURES_DIR / name).read_text())
 
-    def make_deps(self) -> tuple[WhatsAppDeps, SessionStore]:
-        store = SessionStore()
+    def make_deps(self) -> tuple[WhatsAppDeps, DirectSessionStore]:
+        store = DirectSessionStore()
+        airtable_client = AsyncMock()
         deps = WhatsAppDeps(
             logger=Mock(),
             meta_client_getter=lambda: object(),
             sarvam_client_getter=lambda: object(),
-            airtable_client_getter=lambda: object(),
-            session_store_getter=lambda: store,
+            groq_client_getter=lambda: object(),
+            airtable_client_getter=lambda: airtable_client,
+            direct_session_store_getter=lambda: store,
         )
         return deps, store
 
@@ -135,12 +172,12 @@ class WhatsAppBackendTests(unittest.TestCase):
                         self.assertEqual(health_response.status_code, 200)
                         self.assertEqual(verify_response.status_code, 200)
 
-                    create_meta.assert_called_once()
-                    create_sarvam.assert_called_once()
-                    create_airtable.assert_called_once()
-                    meta_client.aclose.assert_awaited_once()
-                    sarvam_client.aclose.assert_awaited_once()
-                    airtable_client.aclose.assert_awaited_once()
+                create_meta.assert_called_once()
+                create_sarvam.assert_called_once()
+                create_airtable.assert_called_once()
+                meta_client.aclose.assert_awaited_once()
+                sarvam_client.aclose.assert_awaited_once()
+                airtable_client.aclose.assert_awaited_once()
 
     def test_extract_text_message(self) -> None:
         payload = self.load_fixture("whatsapp_text_message.json")
@@ -168,6 +205,75 @@ class WhatsAppBackendTests(unittest.TestCase):
         payload = {"choices": [{"message": {"content": "Hello"}}]}
         self.assertEqual(extract_text_reply(payload), "Hello")
 
+    def test_sarvam_provider_sends_current_auth_headers(self) -> None:
+        client = AsyncMock()
+        client.post = AsyncMock(return_value=FakeResponse({"choices": [{"message": {"content": "Hello"}}]}))
+        result = self._run_async(
+            chat_complete(
+                client=client,
+                messages=[{"role": "user", "content": "Hi"}],
+                model="sarvam-30b",
+                max_tokens=20,
+            )
+        )
+        self.assertEqual(result, "Hello")
+        headers = client.post.await_args.kwargs["headers"]
+        payload = client.post.await_args.kwargs["json"]
+        self.assertEqual(headers["Authorization"], "Bearer sk_2nsno8vh_C8kYUniS349fSiwv4h8PagLd")
+        self.assertEqual(headers["api-subscription-key"], "sk_2nsno8vh_C8kYUniS349fSiwv4h8PagLd")
+        self.assertNotIn("reasoning_effort", payload)
+
+    def test_sarvam_provider_defaults_to_fast_non_reasoning_model(self) -> None:
+        self.assertEqual(default_chat_model(), "sarvam-30b")
+
+    def test_sarvam_provider_honors_chat_model_env(self) -> None:
+        with patch.dict(os.environ, {"SARVAM_CHAT_MODEL": "sarvam-30b"}):
+            self.assertEqual(default_chat_model(), "sarvam-30b")
+        with patch.dict(os.environ, {"SARVAM_CHAT_MODEL": "custom-fast-model"}):
+            self.assertEqual(default_chat_model(), "custom-fast-model")
+
+    def test_sarvam_provider_strips_think_blocks(self) -> None:
+        client = AsyncMock()
+        client.post = AsyncMock(
+            return_value=FakeResponse(
+                {"choices": [{"message": {"content": "<think>hidden reasoning</think>\n\nFinal answer."}}]}
+            )
+        )
+        result = self._run_async(
+            chat_complete(
+                client=client,
+                messages=[{"role": "user", "content": "Hi"}],
+                model="sarvam-m",
+                max_tokens=20,
+            )
+        )
+        self.assertEqual(result, "Final answer.")
+
+    def test_llm_brain_uses_chat_max_tokens_env(self) -> None:
+        client = AsyncMock()
+        with patch.dict(os.environ, {"GROQ_CHAT_MAX_TOKENS": "77"}):
+            with patch("backend.llm_brain._groq_complete", new=AsyncMock(return_value="Hello")) as complete:
+                result = self._run_async(llm_brain.generate_reply(client, [{"role": "user", "content": "Hi"}]))
+        self.assertEqual(result, "Hello")
+        self.assertEqual(complete.await_args.kwargs["max_tokens"], 77)
+
+    def test_llm_brain_retries_empty_thinking_reply_with_forced_final_prompt(self) -> None:
+        client = AsyncMock()
+        messages = [
+            {"role": "system", "content": "You are a WhatsApp assistant."},
+            {"role": "user", "content": "Can I send a voice note not about my business?"},
+        ]
+        with patch(
+            "backend.llm_brain._groq_complete",
+            new=AsyncMock(side_effect=[RuntimeError("Groq chat returned an empty reply payload={}"), "Yes, send it here and I'll guide you."]),
+        ) as complete:
+            result = self._run_async(llm_brain.generate_reply(client, messages))
+        self.assertEqual(result, "Yes, send it here and I'll guide you.")
+        self.assertEqual(complete.await_count, 2)
+        retry_messages = complete.await_args.kwargs["messages"]
+        self.assertEqual(sum(1 for message in retry_messages if message["role"] == "system"), 1)
+        self.assertIn("Output only the final user-visible WhatsApp reply", retry_messages[0]["content"])
+
     def test_stage_timer_summary(self) -> None:
         timer = StageTimer()
         timer.start("llm")
@@ -179,58 +285,46 @@ class WhatsAppBackendTests(unittest.TestCase):
         self.assertIn("llm_ms", summary)
         self.assertIn("total_ms", summary)
 
-    def test_build_render_request(self) -> None:
-        _, store = self.make_deps()
-        session = store.get("919999999999", "en-IN")
-        session.profile.name = "Ravi"
-        request = build_render_request(
-            session,
-            BehaviorPlan(intent="ask_business", ack="got_it", needs_followup=True),
-        )
-        self.assertEqual(request.intent, "ask_business")
-        self.assertEqual(request.caller_name, "Ravi")
-        self.assertTrue(request.needs_followup)
+    def test_fast_ack_and_background_recovery_are_localized(self) -> None:
+        self.assertEqual(get_fast_ack("hi-IN"), "Theek hai, abhi check kar raha hoon.")
+        self.assertIn("24 ghante", get_background_recovery("hi-IN"))
+        self.assertEqual(get_fast_ack("unknown"), "Got it, checking that now.")
 
-    def test_ra1_system_prompt_uses_memo_context_without_tool_claims(self) -> None:
+    def test_ra1_system_prompt_matches_new_context_driven_design(self) -> None:
         self.assertIn("inbound support operator for Buoyancy Labs", RA1_SYSTEM_PROMPT)
-        self.assertIn("Indian businesses", RA1_SYSTEM_PROMPT)
-        self.assertIn("WhatsApp and voice-first", RA1_SYSTEM_PROMPT)
-        self.assertIn("Indian language mixing", RA1_SYSTEM_PROMPT)
-        self.assertIn("Airtable lookup and waitlist writes are handled by the application", RA1_SYSTEM_PROMPT)
-        self.assertNotIn("check_airtable(", RA1_SYSTEM_PROMPT)
-        self.assertNotIn("add_to_waitlist(", RA1_SYSTEM_PROMPT)
+        self.assertIn("recent visible conversation history", RA1_SYSTEM_PROMPT)
+        self.assertIn("known_caller is true", RA1_SYSTEM_PROMPT)
+        self.assertNotIn("BehaviorPlan", RA1_SYSTEM_PROMPT)
 
-    def test_render_payload_uses_less_instruction_leaky_final_line(self) -> None:
-        messages = build_ra1_messages(
-            [],
-            RenderRequest(intent="ask_business", language_code="en-IN", stage="collect_business"),
-        )
-        payload = messages[-1]["content"]
-        self.assertIn("Final reply only.", payload)
-        self.assertNotIn("Return only the final customer-facing message.", payload)
-
-    def test_render_payload_always_includes_buoyancy_core_facts(self) -> None:
-        messages = build_ra1_messages(
-            [],
-            RenderRequest(intent="ask_business", language_code="en-IN", stage="collect_business"),
-        )
-        payload = messages[-1]["content"]
-        self.assertIn("Buoyancy Labs facts:", payload)
+    def test_build_messages_includes_context_history_and_facts(self) -> None:
+        store = SessionStore()
+        session = store.get("919999999999", "en-IN")
+        session.airtable_checked = True
+        session.known_caller = True
+        session.profile.name = "Ravi"
+        session.profile.business = "Pharmacy"
+        session.profile.support_calls = "Order updates"
+        session.known_record = {"name": "Ravi", "aim of your project": "Pharmacy"}
+        session.history = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+        ]
+        messages = build_messages(session, "What do you do?")
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(sum(1 for message in messages if message["role"] == "system"), 1)
+        context_payload = messages[0]["content"]
+        self.assertIn("Caller language: en-IN", context_payload)
+        self.assertIn("Known caller: True", context_payload)
+        self.assertIn("Returning caller business: Pharmacy", context_payload)
+        self.assertIn("Generate a natural voice reply only.", context_payload)
         for fact in BUOYANCY_CORE_FACTS:
-            self.assertIn(fact, payload)
-
-    def test_local_ra1_fallback_is_customer_facing(self) -> None:
-        fallback = local_ra1_fallback(
-            RenderRequest(intent="ask_name", language_code="en-IN", stage="collect_name", ack="sorry")
-        )
-        self.assertTrue(fallback.startswith("Sorry"))
-        self.assertNotIn("Say ", fallback)
+            self.assertIn(fact, context_payload)
+        self.assertEqual(messages[-1], {"role": "user", "content": "What do you do?"})
 
     def test_validator_blocks_planner_language(self) -> None:
         self.assertFalse(validate_user_facing_reply("Say you did not catch their name."))
         self.assertFalse(validate_user_facing_reply("Ask what their business does."))
         self.assertFalse(validate_user_facing_reply("Greet warmly as RA-1 and ask for name."))
-        self.assertFalse(validate_user_facing_reply("Please convert this customer-facing instruction."))
         self.assertTrue(validate_user_facing_reply("Got it. What kind of business are you running?"))
 
     def test_reply_cap_preserves_followup_sentence(self) -> None:
@@ -239,27 +333,56 @@ class WhatsAppBackendTests(unittest.TestCase):
         )
         self.assertEqual(capped, "Got it. Someone will follow up within 24 hours on WhatsApp.")
 
-    def test_faq_facts_do_not_use_planner_language(self) -> None:
-        from backend.ra1 import FAQ_FACTS
-
-        blocked = ("say ", "ask ", "mention ", "greet ")
-        for fact_list in FAQ_FACTS.values():
-            for fact in fact_list:
-                self.assertFalse(fact.lower().startswith(blocked))
-
-    def test_buoyancy_question_routes_to_answer_question(self) -> None:
-        self.assertTrue(is_buoyancy_question("Buoyancy kya karta hai?"))
+    def test_update_profile_from_text_extracts_name_and_email_without_overwrite(self) -> None:
         session = SessionStore().get("919999999999", "en-IN")
-        plan = decide_turn(session, "Tell me about your company")
-        self.assertEqual(plan.intent, "answer_question")
-        self.assertTrue(plan.needs_followup)
-        self.assertIn(BUOYANCY_CORE_FACTS[0], plan.facts)
+        update_profile_from_text(session, "My name is Ravi and my email is ravi@example.com")
+        self.assertEqual(session.profile.name, "Ravi")
+        self.assertEqual(session.profile.email, "ravi@example.com")
+        update_profile_from_text(session, "My name is Asha")
+        self.assertEqual(session.profile.name, "Ravi")
 
-    def test_buoyancy_question_does_not_interrupt_collection_stage(self) -> None:
+    def test_extract_name_handles_short_name_only_text(self) -> None:
+        self.assertEqual(extract_name("ravi"), "Ravi")
+
+    def test_sanitize_user_facing_reply_rejects_malformed_or_instructional_text(self) -> None:
+        self.assertEqual(sanitize_user_facing_reply("```system```"), "")
+        self.assertEqual(sanitize_user_facing_reply("- Ask for business"), "")
+        self.assertEqual(sanitize_user_facing_reply("  Got it. What kind of business are you running?  "), "Got it. What kind of business are you running?")
+
+    def test_update_profile_from_text_avoids_ambiguous_business_assignment(self) -> None:
         session = SessionStore().get("919999999999", "en-IN")
-        session.stage = "collect_business"
-        plan = decide_turn(session, "We run a company doing logistics")
-        self.assertEqual(plan.intent, "ask_support_calls")
+        session.profile.name = "Ravi"
+        update_profile_from_text(session, "Tell me more about pricing")
+        self.assertEqual(session.profile.business, "")
+        update_profile_from_text(session, "We run a pharmacy")
+        self.assertEqual(session.profile.business, "We run a pharmacy")
+        update_profile_from_text(session, "Mostly order updates and availability")
+        self.assertEqual(session.profile.support_calls, "Mostly order updates and availability")
+
+    def test_ready_to_write_requires_new_caller_with_collected_business(self) -> None:
+        session = SessionStore().get("919999999999", "en-IN")
+        session.airtable_checked = True
+        session.profile.name = "Ravi"
+        session.profile.business = "Pharmacy"
+        self.assertTrue(is_ready_to_write(session))
+        session.known_caller = True
+        self.assertFalse(is_ready_to_write(session))
+
+    def test_is_closing_recognizes_follow_up_phrases(self) -> None:
+        self.assertTrue(is_closing("Someone from our team will follow up within 24 hours on WhatsApp."))
+        self.assertTrue(is_closing("Hamari team 24 ghante mein follow up karegi."))
+        self.assertFalse(is_closing("Tell me more about pricing."))
+
+    def test_fast_path_helpers_cover_greeting_farewell_and_fallbacks(self) -> None:
+        self.assertTrue(is_greeting("hello"))
+        self.assertTrue(is_farewell("thanks"))
+        self.assertIn("RA-1", get_greeting("en-IN"))
+        self.assertIn("24 hours", get_closing("en-IN"))
+        self.assertIn("Dobara", get_stt_fallback("hi-IN"))
+        self.assertIn("send that once more", get_fallback("en-IN"))
+
+    def test_extract_name_handles_possessive_name_phrase(self) -> None:
+        self.assertEqual(extract_name("My name's saju"), "Saju")
 
     def test_find_waitlist_caller_phone_hit(self) -> None:
         client = AsyncMock()
@@ -280,12 +403,43 @@ class WhatsAppBackendTests(unittest.TestCase):
 
     def test_find_waitlist_caller_no_match(self) -> None:
         client = AsyncMock()
-        client.get = AsyncMock(side_effect=[FakeResponse({"records": []}), FakeResponse({"records": []})])
+        client.get = AsyncMock(
+            side_effect=[
+                FakeResponse({"records": []}),
+                FakeResponse({"records": []}),
+                FakeResponse({"records": []}),
+            ]
+        )
         result = self._run_async(find_waitlist_caller(client=client, phone="919999999999", name="Asha"))
         self.assertIsNone(result)
 
+    def test_find_waitlist_caller_by_name_hit(self) -> None:
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=FakeResponse({"records": [{"fields": {"name": "Saju", "aim of your project": "Hostel"}}]}))
+        result = self._run_async(find_waitlist_caller_by_name(client=client, name="Saju"))
+        self.assertEqual(result, {"name": "Saju", "aim of your project": "Hostel"})
+
+    def test_find_waitlist_caller_by_name_is_case_and_spacing_tolerant(self) -> None:
+        client = AsyncMock()
+        client.get = AsyncMock(
+            return_value=FakeResponse({"records": [{"fields": {"name": "Vinu Thomas", "whats your use ": "Textile shop"}}]})
+        )
+        result = self._run_async(find_waitlist_caller_by_name(client=client, name="vinu   thomas"))
+        self.assertEqual(result, {"name": "Vinu Thomas", "whats your use ": "Textile shop"})
+        formula = client.get.await_args.kwargs["params"]["filterByFormula"]
+        self.assertIn("TRIM(LOWER({name}))", formula)
+        self.assertIn("'vinu thomas'", formula)
+
+    def test_waitlist_business_from_record_reads_whats_your_use_field(self) -> None:
+        record = {"name": "Vinu Thomas", "whats your use ": "Textile business"}
+        self.assertEqual(waitlist_business_from_record(record), "Textile business")
+
+    def test_waitlist_business_from_record_normalizes_punctuated_use_field(self) -> None:
+        record = {"name": "Saju Saju", "What's your use?": "mnc"}
+        self.assertEqual(waitlist_business_from_record(record), "mnc")
+
     def test_add_waitlist_caller_success(self) -> None:
-        _, store = self.make_deps()
+        store = SessionStore()
         session = store.get("919999999999", "en-IN")
         session.profile.name = "Ravi"
         session.profile.business = "Runs a pharmacy"
@@ -297,213 +451,406 @@ class WhatsAppBackendTests(unittest.TestCase):
         self.assertEqual(result, {"id": "rec1"})
         payload = client.post.await_args.kwargs["json"]["fields"]
         self.assertEqual(payload["name"], "Ravi")
-        self.assertIn("Support calls:", payload["aim of your project"])
+        self.assertEqual(payload["aim of your project"], format_waitlist_business(session.profile))
 
-    def test_returning_caller_facts_include_record_context(self) -> None:
-        facts = returning_caller_facts({"name": "Ravi", "aim of your project": "Pharmacy"})
-        self.assertIn("Caller is a returning contact named Ravi.", facts)
-        self.assertIn("Their business: Pharmacy.", facts)
-        self.assertIn("Their setup is being reviewed by the Buoyancy team.", facts)
+    def test_create_waitlist_lead_uses_narrow_business_fields(self) -> None:
+        client = AsyncMock()
+        client.post = AsyncMock(return_value=FakeResponse({"id": "rec-new", "fields": {"name": "New Person"}}))
+        result = self._run_async(
+            create_waitlist_lead(
+                client=client,
+                name="New Person",
+                phone="919999999999",
+                business_use="Runs a textile shop",
+                question="Need WhatsApp support",
+            )
+        )
+        self.assertEqual(result["id"], "rec-new")
+        fields = client.post.await_args.kwargs["json"]["fields"]
+        self.assertEqual(fields["name"], "New Person")
+        self.assertEqual(fields["phone no"], 919999999999)
+        self.assertEqual(fields["whats your use"], "Runs a textile shop")
+        self.assertEqual(fields["Question"], "Need WhatsApp support")
 
-    def test_stt_fallback_message_uses_language(self) -> None:
-        self.assertIn("Dobara", stt_fallback_message("hi-IN"))
-        self.assertIn("Voice note", stt_fallback_message("ml-IN"))
-        self.assertIn("Meendum", stt_fallback_message("ta-IN"))
-        self.assertIn("I couldn't catch", stt_fallback_message("en-IN"))
+    def test_update_waitlist_lead_patches_existing_record(self) -> None:
+        client = AsyncMock()
+        client.patch = AsyncMock(return_value=FakeResponse({"id": "rec-existing"}))
+        result = self._run_async(
+            update_waitlist_lead(
+                client=client,
+                record_id="rec-existing",
+                name="Saju Saju",
+                phone="916282355292",
+                business_use="mnc",
+            )
+        )
+        self.assertEqual(result["id"], "rec-existing")
+        self.assertTrue(client.patch.await_args.args[0].endswith("/rec-existing"))
+        self.assertEqual(client.patch.await_args.kwargs["json"]["fields"]["whats your use"], "mnc")
 
-    def test_new_caller_progression_adds_to_waitlist_and_closes(self) -> None:
-        deps, store = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value=None)):
-            with patch("backend.whatsapp.add_waitlist_caller", new=AsyncMock(return_value={"id": "rec1"})) as added:
-                with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(side_effect=[
-                    "Got it. What kind of business are you running?",
-                    "What kind of customer support calls do you get most?",
-                    "Any specific questions about how this works?",
-                    "Perfect. Someone from Buoyancy Labs will follow up within 24 hours on WhatsApp.",
-                ])):
-                    with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()):
-                        self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                        message["text"] = {"body": "My name is Ravi"}
-                        self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                        message["text"] = {"body": "We run a pharmacy"}
-                        self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                        message["text"] = {"body": "Mostly order updates and medicine availability"}
-                        self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                        message["text"] = {"body": "How fast is setup?"}
-                        self._run_async(handle_whatsapp_message(deps=deps, message=message))
+    def test_direct_llm_messages_use_one_system_prompt(self) -> None:
+        messages = build_direct_llm_messages("Who are you?", "en-IN")
+        self.assertEqual(sum(1 for message in messages if message["role"] == "system"), 1)
+        self.assertIn("AI customer support agent powered by Buoyancy Labs", messages[0]["content"])
+        self.assertIn("Pricing is discussed during follow-up only", messages[0]["content"])
+        self.assertIn("Business type: not known yet", messages[0]["content"])
+        self.assertEqual(messages[-1], {"role": "user", "content": "Who are you?"})
 
-        added.assert_awaited_once()
-        self.assertIsNone(store._sessions.get("919999999999"))
+    def test_direct_llm_messages_can_use_known_business_compat_argument(self) -> None:
+        messages = build_direct_llm_messages("What can you do for me?", "en-IN", known_name="Saju", known_business="Hostel")
+        self.assertIn("Business type: Hostel", messages[0]["content"])
+        self.assertIn("deployed WhatsApp AI support assistant", messages[0]["content"])
 
-    def test_text_message_updates_language_from_script(self) -> None:
-        deps, store = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        message["text"] = {"body": "नमस्ते"}
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value=None)):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock()):
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()):
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
+    def test_direct_llm_messages_include_session_business_and_history(self) -> None:
+        session = DirectCallerSession(phone="919999999999")
+        session.business_type = "small bakery shop"
+        session.history = [
+            {"role": "user", "content": "I run a small bakery shop"},
+            {"role": "assistant", "content": business_captured_reply("small bakery shop")},
+        ]
+        messages = build_direct_llm_messages("A customer says their cake is late", "en-IN", session=session)
+        self.assertIn("Business type: small bakery shop", messages[0]["content"])
+        self.assertEqual(messages[1]["role"], "user")
+        self.assertEqual(messages[2]["role"], "assistant")
+        self.assertEqual(messages[-1], {"role": "user", "content": "A customer says their cake is late"})
 
-        self.assertEqual(store.get("919999999999").language_code, "hi-IN")
-        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
-        self.assertEqual(summary["language"], "hi-IN")
-
-    def test_returning_caller_flow_gives_status_update(self) -> None:
-        deps, store = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value={"name": "Ravi", "aim of your project": "Pharmacy"})):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(side_effect=[
-                "Welcome back Ravi. Your setup is being reviewed. What would you like help with today?",
-                "We support Hindi, Tamil, Malayalam, Hinglish, and English. We will follow up within 24 hours on WhatsApp.",
-            ])):
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()):
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "My name is Ravi"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "What languages do you support?"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        self.assertIsNone(store._sessions.get("919999999999"))
-
-    def test_unclear_name_triggers_clarification(self) -> None:
+    def test_greeting_asks_for_business_without_calling_llm(self) -> None:
         deps, _ = self.make_deps()
         message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(side_effect=[
-            "Sorry, I missed your name. What should I call you?",
-        ])):
-            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()):
+        message["text"] = {"body": "Hi"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock()) as chat:
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
                 self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                message["text"] = {"body": "Yes"}
-                self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
+        chat.assert_not_awaited()
+        self.assertEqual(sender.await_args.kwargs["body"], DEMO_INTRO)
         summary = self._extract_latency_summary(deps.logger.info.call_args_list)
-        self.assertEqual(summary["kind"], "text")
+        self.assertEqual(summary["source"], "demo_intro")
 
-    def test_audio_caller_path_preserves_ra1_logic(self) -> None:
+    def test_business_statement_stores_business_without_calling_llm(self) -> None:
+        deps, store = self.make_deps()
+        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        session = store.get(message["from"])
+        message["text"] = {"body": "I run a garage"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock()) as chat:
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        chat.assert_not_awaited()
+        self.assertEqual(session.business_type, "garage")
+        self.assertIn("support for your garage", sender.await_args.kwargs["body"])
+        self.assertIn("message me like a customer", sender.await_args.kwargs["body"])
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "business_captured")
+
+    def test_product_question_before_business_explains_and_asks_business(self) -> None:
+        deps, store = self.make_deps()
+        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        message["text"] = {"body": "What does Buoyancy Labs do?"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock()) as chat:
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        chat.assert_not_awaited()
+        self.assertEqual(store.get(message["from"]).business_type, "")
+        self.assertEqual(sender.await_args.kwargs["body"], PRODUCT_INTRO)
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "product_intro")
+
+    def test_customer_message_after_business_goes_to_llm_with_business_context(self) -> None:
+        deps, store = self.make_deps()
+        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        session = store.get(message["from"])
+        session.business_type = "garage"
+        message["text"] = {"body": "My car service is delayed"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock(return_value="Sorry about the delay. Please share your vehicle number so I can check the service status.")) as chat:
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        chat.assert_awaited_once()
+        messages = chat.await_args.args[1]
+        self.assertIn("Business type: garage", messages[0]["content"])
+        self.assertIn("deployed WhatsApp AI support assistant", messages[0]["content"])
+        self.assertEqual(sender.await_args.kwargs["body"], "Sorry about the delay. Please share your vehicle number so I can check the service status.")
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "direct_llm")
+
+    def test_business_change_updates_context_without_template_tree(self) -> None:
+        session = DirectCallerSession(phone="919999999999", business_type="garage")
+        result = self._run_async(
+            handle_direct_turn(
+                logger=Mock(),
+                llm_client=object(),
+                airtable_client=object(),
+                session=session,
+                user_text="Actually I run a salon",
+                language_code="en-IN",
+            )
+        )
+        self.assertEqual(session.business_type, "salon")
+        self.assertEqual(result.source, "business_updated")
+        self.assertIn("support for your salon", result.reply)
+
+    def test_extract_business_type_is_lightweight_free_text(self) -> None:
+        self.assertEqual(extract_business_type("I run a car rental business."), "car rental")
+        self.assertEqual(extract_business_type("garage"), "garage")
+        self.assertEqual(extract_business_type("What does Buoyancy Labs do?"), "")
+
+    def test_conversation_turns_do_not_call_airtable(self) -> None:
+        session = DirectCallerSession(phone="919999999999")
+        airtable_client = AsyncMock()
+        result = self._run_async(
+            handle_direct_turn(
+                logger=Mock(),
+                llm_client=object(),
+                airtable_client=airtable_client,
+                session=session,
+                user_text="I run a garage",
+                language_code="en-IN",
+            )
+        )
+        self.assertEqual(result.source, "business_captured")
+        airtable_client.get.assert_not_called()
+        airtable_client.post.assert_not_called()
+        airtable_client.patch.assert_not_called()
+
+    def test_text_message_llm_failure_sends_direct_fallback(self) -> None:
+        deps, store = self.make_deps()
+        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        store.get(message["from"]).business_type = "garage"
+        message["text"] = {"body": "What can you do?"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock(side_effect=RuntimeError("chat down"))):
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        self.assertEqual(sender.await_args.kwargs["body"], DIRECT_LLM_FALLBACK)
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "direct_fallback")
+
+    def test_text_send_failure_does_not_raise_from_handler(self) -> None:
+        deps, store = self.make_deps()
+        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        store.get(message["from"]).business_type = "garage"
+        message["text"] = {"body": "What's Buoyancy Labs?"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock(return_value="Buoyancy Labs builds support agents.")):
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock(side_effect=RuntimeError("401 Unauthorized"))):
+                self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        deps.logger.warning.assert_any_call("WhatsApp text send skipped/failed: %s: %s", "RuntimeError", ANY)
+
+    def test_slow_text_turn_sends_ack_then_background_reply(self) -> None:
+        deps, store = self.make_deps()
+        session = store.get("919999999999")
+
+        async def slow_turn(**kwargs):
+            await asyncio.sleep(0.01)
+            from backend.conversation import ConversationResult
+
+            return ConversationResult(reply="Final answer.", source="direct_llm", airtable_status="found")
+
+        async def run_case():
+            timer = StageTimer()
+            with patch.dict(os.environ, {"WHATSAPP_FAST_REPLY_TIMEOUT_MS": "1"}):
+                with patch("backend.whatsapp.handle_direct_turn", side_effect=slow_turn):
+                    with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                        await send_hybrid_text_reply(
+                            deps=deps,
+                            meta_client=object(),
+                            llm_client=object(),
+                            airtable_client=object(),
+                            session=session,
+                            from_number="919999999999",
+                            user_text="What do you do?",
+                            language_code="en-IN",
+                            timer=timer,
+                            turn_id="turn-test",
+                            message_id="wamid.test.slow",
+                        )
+                        await asyncio.sleep(0.03)
+                        return sender
+
+        sender = self._run_async(run_case())
+        bodies = [call.kwargs["body"] for call in sender.await_args_list]
+        self.assertEqual(bodies, ["Got it, checking that now.", "Final answer."])
+        summaries = self._latency_summaries(deps.logger.info.call_args_list)
+        ack_summary = next(summary for summary in summaries if summary.get("hybrid") is True)
+        self.assertEqual(ack_summary["turn_id"], "turn-test")
+        self.assertEqual(ack_summary["message_id"], "wamid.test.slow")
+        self.assertFalse(ack_summary["final_sent"])
+        self.assertTrue(ack_summary["ack_sent"])
+        self.assertTrue(
+            any(
+                call.args
+                and call.args[0] == "WA_BACKGROUND source=%s language=%s background_ms=%s turn_id=%s message_id=%s final_sent=%s"
+                and call.args[4] == "turn-test"
+                and call.args[5] == "wamid.test.slow"
+                and call.args[6] is True
+                for call in deps.logger.info.call_args_list
+            )
+        )
+
+    def test_slow_text_turn_background_failure_sends_recovery(self) -> None:
+        deps, store = self.make_deps()
+        session = store.get("919999999999")
+
+        async def failing_turn(**kwargs):
+            await asyncio.sleep(0.01)
+            raise RuntimeError("background down")
+
+        async def run_case():
+            timer = StageTimer()
+            with patch.dict(os.environ, {"WHATSAPP_FAST_REPLY_TIMEOUT_MS": "1"}):
+                with patch("backend.whatsapp.handle_direct_turn", side_effect=failing_turn):
+                    with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                        await send_hybrid_text_reply(
+                            deps=deps,
+                            meta_client=object(),
+                            llm_client=object(),
+                            airtable_client=object(),
+                            session=session,
+                            from_number="919999999999",
+                            user_text="What do you do?",
+                            language_code="hi-IN",
+                            timer=timer,
+                            turn_id="turn-fail",
+                            message_id="wamid.test.fail",
+                        )
+                        await asyncio.sleep(0.03)
+                        return sender
+
+        sender = self._run_async(run_case())
+        bodies = [call.kwargs["body"] for call in sender.await_args_list]
+        self.assertEqual(bodies[0], "Theek hai, abhi check kar raha hoon.")
+        self.assertIn("24 ghante", bodies[1])
+        deps.logger.exception.assert_any_call(
+            "Background reply failed turn_id=%s message_id=%s",
+            "turn-fail",
+            "wamid.test.fail",
+        )
+        self.assertTrue(
+            any(
+                call.args
+                and call.args[0] == "WA_BACKGROUND_RECOVERY turn_id=%s message_id=%s recovery_sent=%s error=%s"
+                and call.args[1] == "turn-fail"
+                and call.args[2] == "wamid.test.fail"
+                and call.args[3] is True
+                for call in deps.logger.info.call_args_list
+            )
+        )
+
+    def test_tracked_background_task_logs_unexpected_crash(self) -> None:
         deps, _ = self.make_deps()
+
+        async def boom():
+            raise RuntimeError("unexpected")
+
+        async def run_case():
+            task = create_tracked_background_task(
+                deps,
+                boom(),
+                turn_id="turn-crash",
+                message_id="wamid.crash",
+            )
+            await task
+
+        self._run_async(run_case())
+        deps.logger.exception.assert_any_call(
+            "WA_BACKGROUND_CRASH turn_id=%s message_id=%s",
+            "turn-crash",
+            "wamid.crash",
+        )
+
+    def test_audio_flow_uses_stt_then_direct_llm_then_tts(self) -> None:
+        deps, store = self.make_deps()
         message = self.load_fixture("whatsapp_audio_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-
+        session = store.get(message["from"])
+        session.business_type = "garage"
         with patch("backend.whatsapp.fetch_whatsapp_media_metadata", new=AsyncMock(return_value={"url": "https://example.com/audio", "mime_type": "audio/ogg"})):
             with patch("backend.whatsapp.download_whatsapp_media", new=AsyncMock(return_value=b"audio-bytes")):
-                with patch("backend.whatsapp.sarvam_transcribe_audio", new=AsyncMock(return_value=("hello", "en-IN"))):
-                    with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock()) as chat:
+                with patch("backend.whatsapp.sarvam_transcribe_audio", new=AsyncMock(return_value=("Can I use this after 6pm?", "en-IN"))):
+                    with patch("backend.conversation.generate_reply", new=AsyncMock(return_value="Hello from LLM.")) as chat:
                         with patch("backend.whatsapp.sarvam_synthesize_speech", new=AsyncMock(return_value=b"mp3-bytes")):
                             with patch("backend.whatsapp.upload_whatsapp_media", new=AsyncMock(return_value="media-id")):
-                                with patch("backend.whatsapp.send_whatsapp_audio", new=AsyncMock()):
+                                with patch("backend.whatsapp.send_whatsapp_audio", new=AsyncMock()) as audio_sender:
                                     self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        chat.assert_not_awaited()
-
+        chat.assert_awaited_once()
+        prompt = chat.await_args.args[1][0]["content"]
+        self.assertIn("Business type: garage", prompt)
+        audio_sender.assert_awaited_once()
         summary = self._extract_latency_summary(deps.logger.info.call_args_list)
         self.assertEqual(summary["kind"], "audio")
+        self.assertEqual(summary["source"], "audio_direct_llm")
         self.assertIn("stt_ms", summary)
         self.assertIn("tts_ms", summary)
 
-    def test_mandatory_close_promise_present_on_completed_flow(self) -> None:
+    def test_audio_tts_failure_sends_direct_llm_text_reply(self) -> None:
+        deps, store = self.make_deps()
+        message = self.load_fixture("whatsapp_audio_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        store.get(message["from"]).business_type = "garage"
+        with patch("backend.whatsapp.fetch_whatsapp_media_metadata", new=AsyncMock(return_value={"url": "https://example.com/audio", "mime_type": "audio/ogg"})):
+            with patch("backend.whatsapp.download_whatsapp_media", new=AsyncMock(return_value=b"audio-bytes")):
+                with patch("backend.whatsapp.sarvam_transcribe_audio", new=AsyncMock(return_value=("What can you do?", "en-IN"))):
+                    with patch("backend.conversation.generate_reply", new=AsyncMock(return_value="Hello from LLM.")):
+                        with patch("backend.whatsapp.sarvam_synthesize_speech", new=AsyncMock(side_effect=RuntimeError("tts down"))):
+                            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                                self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        self.assertEqual(sender.await_args.kwargs["body"], "Hello from LLM.")
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "audio_direct_llm_tts_fallback")
+
+    def test_audio_stt_failure_sends_direct_stt_fallback(self) -> None:
+        deps, _ = self.make_deps()
+        message = self.load_fixture("whatsapp_audio_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+        with patch("backend.whatsapp.fetch_whatsapp_media_metadata", new=AsyncMock(return_value={"url": "https://example.com/audio", "mime_type": "audio/ogg"})):
+            with patch("backend.whatsapp.download_whatsapp_media", new=AsyncMock(return_value=b"audio-bytes")):
+                with patch("backend.whatsapp.sarvam_transcribe_audio", new=AsyncMock(side_effect=RuntimeError("stt down"))):
+                    with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                        self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        self.assertEqual(sender.await_args.kwargs["body"], DIRECT_STT_FALLBACK)
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "audio_stt_fallback")
+
+    def test_audio_conversation_timeout_sends_text_without_tts(self) -> None:
+        deps, _ = self.make_deps()
+        message = self.load_fixture("whatsapp_audio_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
+
+        async def slow_turn(**kwargs):
+            await asyncio.sleep(0.02)
+
+        with patch("backend.whatsapp.fetch_whatsapp_media_metadata", new=AsyncMock(return_value={"url": "https://example.com/audio", "mime_type": "audio/ogg"})):
+            with patch("backend.whatsapp.download_whatsapp_media", new=AsyncMock(return_value=b"audio-bytes")):
+                with patch("backend.whatsapp.sarvam_transcribe_audio", new=AsyncMock(return_value=("What can you do?", "en-IN"))):
+                    with patch.dict(os.environ, {"WHATSAPP_AUDIO_CONVERSATION_TIMEOUT_MS": "1"}):
+                        with patch("backend.whatsapp.handle_direct_turn", side_effect=slow_turn):
+                            with patch("backend.whatsapp.sarvam_synthesize_speech", new=AsyncMock()) as tts:
+                                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+                                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
+        tts.assert_not_awaited()
+        self.assertEqual(sender.await_args.kwargs["body"], AUDIO_REPLY_TIMEOUT)
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["source"], "audio_timeout_fallback")
+
+    def test_duplicate_message_id_is_ignored(self) -> None:
+        message = {"id": "wamid.same.1", "from": "919999999999", "text": {"body": "Hi"}}
+        self.assertTrue(should_process_message(message))
+        self.assertFalse(should_process_message(message))
+
+    def test_text_message_updates_language_from_script_for_direct_llm(self) -> None:
         deps, _ = self.make_deps()
         message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value={"name": "Ravi"})):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(side_effect=[
-                "Welcome back Ravi. Your setup is being reviewed. What would you like help with today?",
-                "We will follow up within 24 hours on WhatsApp.",
-            ])):
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "My name is Ravi"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "No"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        final_body = sender.await_args.kwargs["body"]
-        self.assertIn("24 hours", final_body)
-
-    def test_identity_question_is_deterministic(self) -> None:
-        deps, _ = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        message["text"] = {"body": "Who are you?"}
-        with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(return_value="I’m RA-1, customer support agent from Buoyancy Labs.")):
-            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
+        message["text"] = {"body": "नमस्ते"}
+        with patch("backend.conversation.generate_reply", new=AsyncMock(return_value="नमस्ते!")):
+            with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()):
                 self._run_async(handle_whatsapp_message(deps=deps, message=message))
-        self.assertIn("customer support agent", sender.await_args.kwargs["body"])
-
-    def test_first_message_uses_hardcoded_greeting_without_llm(self) -> None:
-        deps, store = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value=None)):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock()) as chat:
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        chat.assert_not_awaited()
-        self.assertEqual(
-            sender.await_args.kwargs["body"],
-            "Namaste! I'm RA-1 from Buoyancy Labs. What's your name and what does your business do?",
-        )
-        history = store.get("919999999999").history
-        self.assertEqual(history[-1]["role"], "assistant")
-        self.assertNotIn("Greet warmly", history[-1]["content"])
-
-    def test_unsafe_model_output_falls_back_safely(self) -> None:
-        deps, _ = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value=None)):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(return_value="Greet warmly as RA-1 and ask for name.")):
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "My name is Ravi"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        body = sender.await_args.kwargs["body"]
-        self.assertNotIn("Greet warmly", body)
-        self.assertIn("business", body)
-
-    def test_llm_failure_during_business_stage_uses_stage_fallback(self) -> None:
-        deps, _ = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value=None)):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(side_effect=RuntimeError("empty reply"))):
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "My name is Ravi"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        self.assertEqual(sender.await_args.kwargs["body"], "Got it. What kind of business are you running?")
-
-    def test_session_history_stores_only_user_visible_messages(self) -> None:
-        deps, store = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(return_value=None)):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock(return_value="Got it. What kind of business are you running?")):
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()):
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-                    message["text"] = {"body": "My name is Ravi"}
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        history_text = "\n".join(item["content"] for item in store.get("919999999999").history)
-        self.assertNotIn("Intent:", history_text)
-        self.assertNotIn("Return only", history_text)
-
-    def test_airtable_prefetch_failure_does_not_block_greeting(self) -> None:
-        deps, _ = self.make_deps()
-        message = self.load_fixture("whatsapp_text_message.json")["entry"][0]["changes"][0]["value"]["messages"][0]
-        with patch("backend.whatsapp.find_waitlist_caller", new=AsyncMock(side_effect=RuntimeError("airtable down"))):
-            with patch("backend.whatsapp.sarvam_chat_completion", new=AsyncMock()) as chat:
-                with patch("backend.whatsapp.send_whatsapp_text", new=AsyncMock()) as sender:
-                    self._run_async(handle_whatsapp_message(deps=deps, message=message))
-
-        chat.assert_not_awaited()
-        self.assertIn("RA-1 from Buoyancy Labs", sender.await_args.kwargs["body"])
-        deps.logger.warning.assert_called()
+        summary = self._extract_latency_summary(deps.logger.info.call_args_list)
+        self.assertEqual(summary["language"], "hi-IN")
 
     def _extract_latency_summary(self, call_args_list):
+        summaries = self._latency_summaries(call_args_list)
+        if not summaries:
+            self.fail("WA_LATENCY summary log not found")
+        return summaries[-1]
+
+    def _latency_summaries(self, call_args_list):
         summaries = []
         for call in call_args_list:
             if call.args and call.args[0] == "WA_LATENCY %s":
                 summaries.append(call.args[1])
-        if not summaries:
-            self.fail("WA_LATENCY summary log not found")
-        return summaries[-1]
+        return summaries
 
     def _run_async(self, coroutine):
         import asyncio

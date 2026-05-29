@@ -53,25 +53,24 @@ const COPY: Record<LanguageCode, {
       "At Buoyancy Labs, we build voice agents that understand how Indians actually speak — the mixed language, the shortcuts, the warmth, and the pauses. Not translated. Not approximated. Understood.",
     agents: "Our Agents",
     agentsIntro:
-      "Your customers are speaking. Most support isn't listening.\n\nOur agents are built for the calls Indian businesses receive every day — from small shops to growing platforms.",
+      "Indian businesses get customer calls every day.\n\nOur agents are built to handle them.",
     shopsTitle: "For shops and small businesses",
     shopsBody:
-      "Order questions, payment reminders, complaints, and callbacks. In Hindi, Tamil, Malayalam, or whatever language your customer calls in.",
+      "Orders, payments, complaints, and callbacks in the language your customer speaks.",
     platformsTitle: "For growing platforms",
     platformsBody:
-      "Payment failures, delivery exceptions, support spikes, and backlog handling. At scale, without a script.",
+      "Payment failures, delivery issues, support spikes, and backlog handling at scale.",
     noScripts: "No stiff scripts.",
     noTranslations: "No awkward translations.",
     noSprints: "",
-    indianScale: "Just voice that works at Indian scale.",
+    indianScale: "Voice that works at Indian scale.",
     requestDemo: "Request demo",
     mission: "The Mission",
     missionLines: [
-      "Every customer who calls deserves to feel understood.",
-      "Not put on hold. Not transferred. Not answered in the wrong language.",
-      "India speaks in feelings, shortcuts, and half-sentences. We build voice agents that understand exactly that.",
+      "Every caller deserves to feel understood.",
+      "Not on hold. Not transferred. Not answered in the wrong language.",
+      "We build voice agents for how India actually speaks.",
       "This is Buoyancy.",
-      "A voice layer built for the way India actually speaks.",
     ],
     getInTouch: "Get in touch",
     controls: {
@@ -439,6 +438,9 @@ export function HomepageContent() {
                 <p>{t.indianScale}</p>
               </div>
               <div className="agents-feature__cta">
+                <span className="agents-feature__cta-note">
+                  You can test the demo via WhatsApp.
+                </span>
                 <a
                   href="/setup"
                   className="homepage-link inline-flex items-center gap-2 text-[14px] transition-colors duration-200 focus:outline-none"
@@ -455,11 +457,11 @@ export function HomepageContent() {
           <div className="mission-feature">
             <p className="homepage-section__label">{t.mission}</p>
             <div className="mission-feature__copy">
-              <div className="max-w-xl space-y-6">
+              <div className="mission-feature__body max-w-xl">
                 {t.missionLines.map((line) => (
                   <p key={line}>{line}</p>
                 ))}
-                <div className="flex flex-col gap-7 pt-4 items-start sm:flex-row sm:items-center">
+                <div className="mission-feature__cta flex flex-col gap-7 items-start sm:flex-row sm:items-center">
                   <a
                     href="mailto:iamsajubabu@gmail.com"
                     className="mission-feature__contact group inline-flex items-center gap-2 text-[14px] transition-all duration-200 hover:translate-x-0.5 focus:outline-none"

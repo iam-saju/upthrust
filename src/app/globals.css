@@ -336,7 +336,7 @@ html[data-theme="dark"] .voice-layer--accent {
 }
 
 .homepage-hero {
-    padding: 128px 0 0;
+    padding: 128px 0 112px;
 }
 
 .homepage-hero__shell,
@@ -375,14 +375,14 @@ html[data-theme="dark"] .voice-layer--accent {
 .homepage-hero__headline {
     margin: 0;
     font-family: var(--font-cursor-gothic);
-    font-size: 20px;
+    font-size: 23px;
     font-weight: 400;
     font-style: normal;
     font-stretch: 100%;
     font-variant: normal;
     line-height: 30px;
     letter-spacing: 0.1px;
-    color: rgba(232, 224, 208, 0.72);
+    color: rgb(255, 255, 255);
     max-width: 34rem;
 }
 
@@ -431,7 +431,7 @@ html[data-theme="dark"] .voice-layer--accent {
 }
 
 .homepage-hero__body-wrap {
-    padding-top: 44px;
+    padding-top: 58px;
 }
 
 .homepage-hero__visual {
@@ -480,11 +480,11 @@ html[data-theme="dark"] .voice-layer--accent {
 }
 
 .homepage-sections-shell {
-    padding: 148px 0 72px;
+    padding: 0 0 20px;
 }
 
 .agents-section {
-    margin-bottom: 156px;
+    margin-bottom: 128px;
 }
 
 .agents-feature__copy {
@@ -497,6 +497,13 @@ html[data-theme="dark"] .voice-layer--accent {
     display: flex;
     flex-direction: column;
     gap: 20px;
+}
+
+.agents-feature__intro p,
+.agents-feature__audiences p,
+.agents-feature__points p,
+.mission-feature__body p {
+    margin: 0;
 }
 
 .agents-feature__audiences {
@@ -523,10 +530,19 @@ html[data-theme="dark"] .voice-layer--accent {
 }
 
 .agents-feature__cta {
-    padding-top: 28px;
+    padding-top: 40px;
+    padding-bottom: 12px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 18px 28px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.agents-feature__cta-note {
+    color: var(--page-text-muted);
+    font-family: var(--font-cursor-gothic);
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 .mission-section {
@@ -548,6 +564,17 @@ html[data-theme="dark"] .voice-layer--accent {
     line-height: 25.5px;
     letter-spacing: 0.085px;
     color: rgb(23, 23, 23);
+}
+
+.mission-feature__body {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.mission-feature__cta {
+    padding-top: 28px;
+    padding-bottom: 12px;
 }
 
 .mission-feature__contact {
@@ -574,17 +601,17 @@ html[data-theme="dark"] .voice-layer--accent {
     }
 
     .homepage-sections-shell {
-        padding-top: 116px;
+        padding-bottom: 20px;
     }
 
     .agents-section {
-        margin-bottom: 116px;
+        margin-bottom: 104px;
     }
 }
 
 @media (max-width: 768px) {
     .homepage-hero {
-        padding-top: 72px;
+        padding: 72px 0 88px;
     }
 
     .homepage-brand {
@@ -606,7 +633,7 @@ html[data-theme="dark"] .voice-layer--accent {
     }
 
     .homepage-hero__body-wrap {
-        padding-top: 34px;
+        padding-top: 42px;
     }
 
     .homepage-hero__frame {
@@ -624,11 +651,11 @@ html[data-theme="dark"] .voice-layer--accent {
     }
 
     .homepage-sections-shell {
-        padding: 96px 0 44px;
+        padding: 0 0 20px;
     }
 
     .agents-section {
-        margin-bottom: 96px;
+        margin-bottom: 88px;
     }
 
     .mission-feature__copy {
@@ -638,7 +665,7 @@ html[data-theme="dark"] .voice-layer--accent {
 
 @media (max-width: 480px) {
     .homepage-hero {
-        padding-top: 56px;
+        padding: 56px 0 72px;
     }
 
     .homepage-section__label {
@@ -696,7 +723,7 @@ html[data-theme="dark"] .voice-layer--accent {
 }
 
 html[data-theme="light"] .homepage-hero__headline {
-    color: rgba(23, 23, 23, 0.68);
+    color: rgb(0, 0, 0);
 }
 
 .homepage-copy,
@@ -712,6 +739,10 @@ html[data-theme="light"] .homepage-hero__headline {
     font-variant: normal;
     line-height: 25.5px;
     letter-spacing: 0.085px;
+}
+
+.mission-feature__copy {
+    color: var(--page-text-soft);
 }
 
 .homepage-copy {
@@ -785,7 +816,7 @@ html[data-theme="light"] .homepage-hero__headline {
 .homepage-link,
 .mission-feature__contact,
 .mission-feature__contact:hover {
-    color: #ff8a33;
+    color: #e05a2a;
 }
 
 .homepage-link,
@@ -798,8 +829,8 @@ html[data-theme="light"] .homepage-hero__headline {
 
 .homepage-link:hover,
 .mission-feature__contact:hover {
-    color: #ffb06f;
-    text-shadow: 0 0 18px rgba(255, 138, 51, 0.22);
+    color: #f06a35;
+    text-shadow: 0 0 18px rgba(224, 90, 42, 0.22);
 }
 
 .homepage-link:active,
@@ -814,9 +845,10 @@ html[data-theme="light"] .homepage-hero__headline {
     justify-content: flex-end;
     align-items: center;
     gap: 8px;
+    width: 100%;
     max-width: 1280px;
-    margin: 42px auto 0;
-    padding: 0 24px;
+    margin: 28px auto 0;
+    padding: 0 24px 24px;
     font-family:
         var(--font-inter), -apple-system, BlinkMacSystemFont,
         "SF Pro Display", "Segoe UI", sans-serif;
@@ -1009,13 +1041,10 @@ html[data-theme="light"] .language-switch__option:hover {
     }
 
     .site-preferences {
-        justify-content: flex-start;
         flex-wrap: nowrap;
         gap: 7px;
-        transform: none;
-        transform-origin: right bottom;
-        margin-top: 84px;
-        padding: 0 18px;
+        max-width: 1280px;
+        padding: 0 20px 20px;
     }
 
     .theme-switch__button {
@@ -1037,7 +1066,7 @@ html[data-theme="light"] .language-switch__option:hover {
 
 @media (max-width: 420px) {
     .site-preferences {
-        transform: none;
+        padding: 0 16px 18px;
     }
 
     .language-switch__menu {

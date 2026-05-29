@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import re
 import time
+import uuid
 from base64 import b64decode
 from dataclasses import dataclass
 from typing import Any
@@ -11,23 +14,28 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
+from .conversation import DIRECT_STT_FALLBACK, DirectSessionStore, direct_session_business, handle_direct_turn
 from .fallbacks import fallback_response
-from .llm_brain import extract_text_reply
-from .ra1 import (
-    BehaviorPlan,
-    CallerSession,
-    SessionStore,
-    append_history,
-    build_render_request,
-    build_ra1_messages,
-    cap_reply_sentences,
-    decide_turn,
-    format_waitlist_business,
-    local_ra1_fallback,
-    scripted_ra1_reply,
-    validate_user_facing_reply,
-)
 from .llm_utils import normalize_language
+
+
+FAST_ACK_MESSAGES = {
+    "en-IN": "Got it, checking that now.",
+    "hi-IN": "Theek hai, abhi check kar raha hoon.",
+    "ml-IN": "Okay, ippol nokkatte.",
+    "ta-IN": "Seri, ippo paarkiren.",
+}
+
+BACKGROUND_RECOVERY_MESSAGES = {
+    "en-IN": "Someone from our team will follow up within 24 hours on WhatsApp.",
+    "hi-IN": "Hamari team ka koi member 24 ghante mein aapko WhatsApp par follow up karega.",
+    "ml-IN": "Njangalude team 24 manikoorinullil WhatsApp-il ningale follow up cheyyum.",
+    "ta-IN": "Engal team 24 mani nerathirkul WhatsApp-il ungalai follow up seivargal.",
+}
+
+AUDIO_REPLY_TIMEOUT = "I got your voice note, but I'm taking too long to reply properly. Please send it as text or try once more."
+MESSAGE_DEDUPE_TTL_SECONDS = 300
+_RECENT_MESSAGE_IDS: dict[str, float] = {}
 
 
 class StageTimer:
@@ -78,22 +86,6 @@ def whatsapp_phone_number_id() -> str | None:
     return os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
 
-def sarvam_api_key() -> str | None:
-    return os.getenv("SARVAM_API_KEY")
-
-
-def airtable_api_key() -> str | None:
-    return os.getenv("AIRTABLE_API_KEY")
-
-
-def airtable_base_id() -> str | None:
-    return os.getenv("AIRTABLE_BASE_ID")
-
-
-def airtable_waitlist_table() -> str:
-    return os.getenv("AIRTABLE_WAITLIST_TABLE_NAME", os.getenv("AIRTABLE_SETUP_TABLE_NAME", "waitinlist"))
-
-
 def require_whatsapp_config() -> tuple[str, str]:
     access_token = whatsapp_access_token()
     phone_number_id = whatsapp_phone_number_id()
@@ -107,39 +99,14 @@ def require_whatsapp_config() -> tuple[str, str]:
     return access_token, phone_number_id
 
 
-def require_sarvam_config() -> str:
-    api_key = sarvam_api_key()
-    if not api_key:
-        raise RuntimeError("Missing Sarvam environment variable: SARVAM_API_KEY")
-    return api_key
-
-
-def require_airtable_config() -> tuple[str, str, str]:
-    api_key = airtable_api_key()
-    base_id = airtable_base_id()
-    table_name = airtable_waitlist_table()
-    missing = []
-    if not api_key:
-        missing.append("AIRTABLE_API_KEY")
-    if not base_id:
-        missing.append("AIRTABLE_BASE_ID")
-    if missing:
-        raise RuntimeError(f"Missing Airtable environment variables: {', '.join(missing)}")
-    return api_key, base_id, table_name
-
-
-def airtable_url() -> str:
-    _, base_id, table_name = require_airtable_config()
-    return f"https://api.airtable.com/v0/{base_id}/{table_name}"
-
-
 @dataclass
 class WhatsAppDeps:
     logger: logging.Logger
     meta_client_getter: Any
     sarvam_client_getter: Any
+    groq_client_getter: Any
     airtable_client_getter: Any
-    session_store_getter: Any
+    direct_session_store_getter: Any
 
     def meta_client(self) -> httpx.AsyncClient:
         return self.meta_client_getter()
@@ -147,11 +114,14 @@ class WhatsAppDeps:
     def sarvam_client(self) -> httpx.AsyncClient:
         return self.sarvam_client_getter()
 
+    def groq_client(self) -> httpx.AsyncClient:
+        return self.groq_client_getter()
+
     def airtable_client(self) -> httpx.AsyncClient:
         return self.airtable_client_getter()
 
-    def session_store(self) -> SessionStore:
-        return self.session_store_getter()
+    def direct_session_store(self) -> DirectSessionStore:
+        return self.direct_session_store_getter()
 
 
 def extract_whatsapp_messages(payload: dict) -> list[dict]:
@@ -176,8 +146,46 @@ def message_audio_id(message: dict) -> str:
     return (message.get("audio", {}) or {}).get("id", "").strip()
 
 
+def inbound_message_id(message: dict) -> str:
+    return (message.get("id") or "").strip()
+
+
+def new_turn_id(message_id: str = "") -> str:
+    if message_id:
+        suffix = re.sub(r"[^A-Za-z0-9]+", "-", message_id)[-24:].strip("-")
+        if suffix:
+            return f"turn-{suffix}"
+    return f"turn-{uuid.uuid4().hex[:12]}"
+
+
 def target_language_for_tts(language_code: str | None) -> str:
     return normalize_language(language_code or os.getenv("WHATSAPP_DEFAULT_LANGUAGE", "en-IN"))
+
+
+def fast_reply_timeout_seconds() -> float:
+    raw = os.getenv("WHATSAPP_FAST_REPLY_TIMEOUT_MS", "1200")
+    try:
+        return max(int(raw), 0) / 1000
+    except ValueError:
+        return 1.2
+
+
+def audio_conversation_timeout_seconds() -> float:
+    raw = os.getenv("WHATSAPP_AUDIO_CONVERSATION_TIMEOUT_MS", "8000")
+    try:
+        return max(int(raw), 1) / 1000
+    except ValueError:
+        return 8.0
+
+
+def get_fast_ack(language_code: str) -> str:
+    normalized = normalize_language(language_code)
+    return FAST_ACK_MESSAGES.get(normalized, FAST_ACK_MESSAGES["en-IN"])
+
+
+def get_background_recovery(language_code: str) -> str:
+    normalized = normalize_language(language_code)
+    return BACKGROUND_RECOVERY_MESSAGES.get(normalized, BACKGROUND_RECOVERY_MESSAGES["en-IN"])
 
 
 def detect_text_language(text: str) -> str:
@@ -196,12 +204,22 @@ def detect_text_language(text: str) -> str:
     return "en-IN"
 
 
+def should_process_message(message: dict) -> bool:
+    message_id = (message.get("id") or "").strip()
+    if not message_id:
+        return True
+    now = time.time()
+    expired = [key for key, seen_at in _RECENT_MESSAGE_IDS.items() if now - seen_at > MESSAGE_DEDUPE_TTL_SECONDS]
+    for key in expired:
+        _RECENT_MESSAGE_IDS.pop(key, None)
+    if message_id in _RECENT_MESSAGE_IDS:
+        return False
+    _RECENT_MESSAGE_IDS[message_id] = now
+    return True
+
+
 def default_tts_speaker() -> str:
     return os.getenv("SARVAM_TTS_SPEAKER", "shubh")
-
-
-def default_chat_model() -> str:
-    return os.getenv("SARVAM_CHAT_MODEL", "sarvam-30b")
 
 
 def raise_for_meta_status(*, logger: Any, response: httpx.Response, action: str) -> None:
@@ -231,6 +249,15 @@ async def send_whatsapp_text(*, logger: Any, client: httpx.AsyncClient, to: str,
     )
     raise_for_meta_status(logger=logger, response=response, action="send_text")
     logger.info("Sent WhatsApp text to %s", to)
+
+
+async def safe_send_whatsapp_text(*, logger: Any, client: httpx.AsyncClient, to: str, body: str) -> bool:
+    try:
+        await send_whatsapp_text(logger=logger, client=client, to=to, body=body)
+        return True
+    except Exception as exc:
+        logger.warning("WhatsApp text send skipped/failed: %s: %s", type(exc).__name__, exc)
+        return False
 
 
 async def upload_whatsapp_media(
@@ -276,6 +303,15 @@ async def send_whatsapp_audio(
     logger.info("Sent WhatsApp audio to %s", to)
 
 
+async def safe_send_whatsapp_audio(*, logger: Any, client: httpx.AsyncClient, to: str, media_id: str) -> bool:
+    try:
+        await send_whatsapp_audio(logger=logger, client=client, to=to, media_id=media_id)
+        return True
+    except Exception as exc:
+        logger.warning("WhatsApp audio send skipped/failed: %s: %s", type(exc).__name__, exc)
+        return False
+
+
 async def fetch_whatsapp_media_metadata(*, client: httpx.AsyncClient, media_id: str) -> dict[str, Any]:
     access_token, _ = require_whatsapp_config()
     response = await client.get(
@@ -296,82 +332,6 @@ async def download_whatsapp_media(*, client: httpx.AsyncClient, media_url: str) 
     return response.content
 
 
-async def sarvam_chat_completion(*, client: httpx.AsyncClient, messages: list[dict[str, str]]) -> str:
-    response = await client.post(
-        "https://api.sarvam.ai/v1/chat/completions",
-        headers={
-            "api-subscription-key": require_sarvam_config(),
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": default_chat_model(),
-            "temperature": 0.2,
-            "max_tokens": 120,
-            "messages": messages,
-        },
-    )
-    response.raise_for_status()
-    reply = extract_text_reply(response.json())
-    if not reply:
-        raise RuntimeError("Sarvam chat returned an empty reply")
-    return reply
-
-
-async def find_waitlist_caller(
-    *,
-    client: httpx.AsyncClient,
-    phone: str,
-    name: str = "",
-) -> dict[str, Any] | None:
-    api_key, _, _ = require_airtable_config()
-    normalized_phone = "".join(ch for ch in phone if ch.isdigit())
-    response = await client.get(
-        airtable_url(),
-        headers={"Authorization": f"Bearer {api_key}"},
-        params={"filterByFormula": f"{{phone no}} = {normalized_phone}"},
-    )
-    response.raise_for_status()
-    records = response.json().get("records") or []
-    if records:
-        return records[0].get("fields") or {}
-
-    if name:
-        safe_name = name.replace("'", "\\'")
-        response = await client.get(
-            airtable_url(),
-            headers={"Authorization": f"Bearer {api_key}"},
-            params={"filterByFormula": f"{{name}} = '{safe_name}'"},
-        )
-        response.raise_for_status()
-        records = response.json().get("records") or []
-        if records:
-            return records[0].get("fields") or {}
-
-    return None
-
-
-async def add_waitlist_caller(*, client: httpx.AsyncClient, session: CallerSession) -> dict[str, Any]:
-    api_key, _, _ = require_airtable_config()
-    normalized_phone = "".join(ch for ch in session.profile.phone if ch.isdigit())
-    fields = {
-        "name": session.profile.name,
-        "mail": session.profile.email,
-        "phone no": int(normalized_phone) if normalized_phone else 0,
-        "aim of your project": format_waitlist_business(session.profile),
-        "Question": session.profile.question,
-    }
-    response = await client.post(
-        airtable_url(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={"fields": fields},
-    )
-    response.raise_for_status()
-    return response.json()
-
-
 async def sarvam_transcribe_audio(
     *,
     client: httpx.AsyncClient,
@@ -381,7 +341,7 @@ async def sarvam_transcribe_audio(
 ) -> tuple[str, str]:
     response = await client.post(
         "https://api.sarvam.ai/speech-to-text",
-        headers={"api-subscription-key": require_sarvam_config()},
+        headers={"api-subscription-key": os.getenv("SARVAM_API_KEY", "")},
         data={"model": "saaras:v3", "mode": "transcribe"},
         files={"file": (filename, audio_bytes, content_type)},
     )
@@ -403,7 +363,7 @@ async def sarvam_synthesize_speech(
     response = await client.post(
         "https://api.sarvam.ai/text-to-speech",
         headers={
-            "api-subscription-key": require_sarvam_config(),
+            "api-subscription-key": os.getenv("SARVAM_API_KEY", ""),
             "Content-Type": "application/json",
         },
         json={
@@ -423,142 +383,190 @@ async def sarvam_synthesize_speech(
     return b64decode(audios[0])
 
 
-async def generate_ra1_reply_text(
+def prepare_voice_reply_text(reply: str) -> str:
+    cleaned = " ".join((reply or "").split())
+    if not cleaned:
+        return ""
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", cleaned) if part.strip()]
+    spoken = " ".join(sentences[:2]) if sentences else cleaned
+    return spoken[:260].strip()
+
+
+async def send_hybrid_text_reply(
     *,
     deps: WhatsAppDeps,
-    client: httpx.AsyncClient,
-    session,
-    plan: BehaviorPlan,
-) -> tuple[str, str]:
-    render_request = build_render_request(session, plan)
-    scripted_reply = scripted_ra1_reply(render_request)
-    if scripted_reply:
-        return scripted_reply, "scripted"
-
-    try:
-        reply_text = await sarvam_chat_completion(
-            client=client,
-            messages=build_ra1_messages(session.history, render_request),
-        )
-        if not validate_user_facing_reply(reply_text):
-            deps.logger.warning("Unsafe RA-1 reply blocked: %r", reply_text[:160])
-            return local_ra1_fallback(render_request), "fallback"
-        return cap_reply_sentences(reply_text), "llm"
-    except Exception as exc:
-        deps.logger.warning("LLM failed for RA-1 reply intent=%s stage=%s error=%s", plan.intent, session.stage, exc)
-        return local_ra1_fallback(render_request), "fallback"
-
-
-def returning_caller_facts(record: dict[str, str]) -> list[str]:
-    facts = []
-    name = (record.get("name") or "").strip()
-    business = (
-        record.get("aim of your project")
-        or record.get("business")
-        or record.get("Business")
-        or ""
-    ).strip()
-    if name:
-        facts.append(f"Caller is a returning contact named {name}.")
-    if business:
-        facts.append(f"Their business: {business}.")
-    facts.append("Their setup is being reviewed by the Buoyancy team.")
-    return facts
-
-
-STT_FALLBACK_MESSAGES = {
-    "hi-IN": "Aapki voice note saaf nahi aayi. Dobara bhejein ya text mein likhein.",
-    "ml-IN": "Voice note shariyayi kittiyilla. Oru thavanakkoodi ayakku, allenkil text aayi ezhuthu.",
-    "ta-IN": "Voice note thelivaga varala. Meendum anuppunga, illai text-a ezhuthunga.",
-    "en-IN": "I couldn't catch that voice note clearly. Please try once more or send it as text.",
-}
-
-
-def stt_fallback_message(language_code: str | None) -> str:
-    return STT_FALLBACK_MESSAGES.get(normalize_language(language_code), STT_FALLBACK_MESSAGES["en-IN"])
-
-
-async def prefetch_waitlist_identity(
-    *,
-    deps: WhatsAppDeps,
-    session: CallerSession,
+    meta_client: httpx.AsyncClient,
+    llm_client: httpx.AsyncClient,
     airtable_client: httpx.AsyncClient,
-) -> None:
-    if session.airtable_checked:
-        return
-    try:
-        record = await find_waitlist_caller(
-            client=airtable_client,
-            phone=session.profile.phone,
-        )
-    except Exception as exc:
-        deps.logger.warning("Airtable prefetch failed phone=%s error=%s", session.profile.phone, exc)
-        return
-
-    session.airtable_checked = True
-    if record:
-        session.known_caller = True
-        session.known_record = {key: str(value) for key, value in record.items()}
-    else:
-        session.known_caller = False
-
-
-async def resolve_turn_plan(
-    *,
-    session: CallerSession,
+    session: Any,
+    from_number: str,
     user_text: str,
-    airtable_client: httpx.AsyncClient,
-) -> tuple[BehaviorPlan, bool]:
-    plan = decide_turn(session, user_text)
-
-    if plan.lookup_caller and session.airtable_checked:
-        if session.known_caller:
-            session.stage = "returning_questions"
-            return (
-                BehaviorPlan(
-                    intent="returning_status",
-                    ack="welcome_back",
-                    facts=returning_caller_facts(session.known_record),
-                    question_to_ask="What would you like help with today?",
-                    close_after_reply=False,
-                ),
-                False,
-            )
-
-        session.stage = "collect_business"
-        return (BehaviorPlan(intent="ask_business", ack="got_it"), False)
-
-    if plan.lookup_caller:
-        record = await find_waitlist_caller(
-            client=airtable_client,
-            phone=session.profile.phone,
-            name=session.profile.name,
+    language_code: str,
+    timer: StageTimer,
+    turn_id: str = "",
+    message_id: str = "",
+) -> None:
+    turn_id = turn_id or new_turn_id(message_id)
+    turn_task = asyncio.create_task(
+        handle_direct_turn(
+            logger=deps.logger,
+            llm_client=llm_client,
+            airtable_client=airtable_client,
+            session=session,
+            user_text=user_text,
+            language_code=language_code,
         )
-        session.airtable_checked = True
-        if record:
-            session.known_caller = True
-            session.known_record = {key: str(value) for key, value in record.items()}
-            session.stage = "returning_questions"
-            return (
-                BehaviorPlan(
-                    intent="returning_status",
-                    ack="welcome_back",
-                    facts=returning_caller_facts(session.known_record),
-                    question_to_ask="What would you like help with today?",
-                    close_after_reply=False,
-                ),
-                False,
-            )
+    )
+    try:
+        timer.start("conversation")
+        result = await asyncio.wait_for(asyncio.shield(turn_task), timeout=fast_reply_timeout_seconds())
+        timer.end("conversation")
+    except asyncio.TimeoutError:
+        timer.end("conversation")
+        ack = get_fast_ack(language_code)
+        timer.start("send")
+        ack_sent = await safe_send_whatsapp_text(logger=deps.logger, client=meta_client, to=from_number, body=ack)
+        timer.end("send")
+        deps.logger.info(
+            "WA_LATENCY %s",
+            {
+                **timer.summary("text", "fast_ack", language_code),
+                "hybrid": True,
+                "ack_sent": ack_sent,
+                "final_sent": False,
+                "turn_id": turn_id,
+                "message_id": message_id,
+            },
+        )
+        create_tracked_background_task(
+            deps,
+            finish_background_text_reply(
+                deps=deps,
+                meta_client=meta_client,
+                turn_task=turn_task,
+                session=session,
+                from_number=from_number,
+                language_code=language_code,
+                turn_id=turn_id,
+                message_id=message_id,
+            ),
+            turn_id=turn_id,
+            message_id=message_id,
+        )
+        return
 
-        session.known_caller = False
-        session.stage = "collect_business"
-        return (BehaviorPlan(intent="ask_business", ack="got_it"), False)
+    timer.start("send")
+    final_sent = await safe_send_whatsapp_text(logger=deps.logger, client=meta_client, to=from_number, body=result.reply)
+    timer.end("send")
+    log_agent_summary(
+        deps=deps,
+        source=result.source,
+        airtable_status=result.airtable_status,
+        session=session,
+        turn_id=turn_id,
+        message_id=message_id,
+        final_sent=final_sent,
+    )
+    deps.logger.info(
+        "WA_LATENCY %s",
+        {
+            **timer.summary("text", result.source, language_code),
+            "hybrid": False,
+            "final_sent": final_sent,
+            "turn_id": turn_id,
+            "message_id": message_id,
+        },
+    )
 
-    if plan.add_waitlist and not session.waitlist_added:
-        await add_waitlist_caller(client=airtable_client, session=session)
-        session.waitlist_added = True
 
-    return plan, plan.close_after_reply
+def create_tracked_background_task(
+    deps: WhatsAppDeps,
+    coroutine,
+    *,
+    turn_id: str,
+    message_id: str,
+) -> asyncio.Task:
+    async def runner():
+        deps.logger.info("WA_BACKGROUND_START turn_id=%s message_id=%s", turn_id, message_id)
+        try:
+            await coroutine
+        except Exception:
+            deps.logger.exception("WA_BACKGROUND_CRASH turn_id=%s message_id=%s", turn_id, message_id)
+
+    return asyncio.create_task(runner())
+
+
+async def finish_background_text_reply(
+    *,
+    deps: WhatsAppDeps,
+    meta_client: httpx.AsyncClient,
+    turn_task: asyncio.Task,
+    session: Any,
+    from_number: str,
+    language_code: str,
+    turn_id: str = "",
+    message_id: str = "",
+) -> None:
+    started = time.time()
+    try:
+        result = await turn_task
+        final_sent = await safe_send_whatsapp_text(logger=deps.logger, client=meta_client, to=from_number, body=result.reply)
+        log_agent_summary(
+            deps=deps,
+            source=result.source,
+            airtable_status=result.airtable_status,
+            session=session,
+            turn_id=turn_id,
+            message_id=message_id,
+            final_sent=final_sent,
+        )
+        deps.logger.info(
+            "WA_BACKGROUND source=%s language=%s background_ms=%s turn_id=%s message_id=%s final_sent=%s",
+            result.source,
+            language_code,
+            int((time.time() - started) * 1000),
+            turn_id,
+            message_id,
+            final_sent,
+        )
+    except Exception as exc:
+        deps.logger.exception("Background reply failed turn_id=%s message_id=%s", turn_id, message_id)
+        recovery_sent = await safe_send_whatsapp_text(
+            logger=deps.logger,
+            client=meta_client,
+            to=from_number,
+            body=get_background_recovery(language_code),
+        )
+        deps.logger.info(
+            "WA_BACKGROUND_RECOVERY turn_id=%s message_id=%s recovery_sent=%s error=%s",
+            turn_id,
+            message_id,
+            recovery_sent,
+            type(exc).__name__,
+        )
+
+
+def log_agent_summary(
+    *,
+    deps: WhatsAppDeps,
+    source: str,
+    airtable_status: str,
+    session: Any,
+    turn_id: str = "",
+    message_id: str = "",
+    final_sent: bool | None = None,
+) -> None:
+    deps.logger.info(
+        "WA_AGENT source=%s airtable_status=%s known_name=%s known_business_present=%s history_turns=%s turn_id=%s message_id=%s final_sent=%s",
+        source,
+        airtable_status,
+        bool(getattr(session, "name", "")),
+        bool(direct_session_business(session)),
+        len(session.history),
+        turn_id,
+        message_id,
+        final_sent,
+    )
 
 
 async def handle_whatsapp_message(*, deps: WhatsAppDeps, message: dict) -> None:
@@ -566,51 +574,43 @@ async def handle_whatsapp_message(*, deps: WhatsAppDeps, message: dict) -> None:
     if not from_number:
         deps.logger.info("Ignoring WhatsApp message without sender: %s", message)
         return
+    message_id = inbound_message_id(message)
+    if not should_process_message(message):
+        deps.logger.info("Ignoring duplicate WhatsApp message id=%s", message.get("id"))
+        return
+    turn_id = new_turn_id(message_id)
 
     timer = StageTimer()
     meta_client = deps.meta_client()
     sarvam_client = deps.sarvam_client()
+    groq_client = deps.groq_client()
     airtable_client = deps.airtable_client()
+    direct_session = deps.direct_session_store().get(from_number)
     language_code = normalize_language(os.getenv("WHATSAPP_DEFAULT_LANGUAGE", "en-IN"))
     text_body = message_text_body(message)
     audio_id = message_audio_id(message)
-    session = deps.session_store().get(from_number, language_code)
-    close_after_reply = False
 
     if text_body:
         language_code = detect_text_language(text_body)
-        session.language_code = language_code
-        if session.stage == "greet":
-            await prefetch_waitlist_identity(
-                deps=deps,
-                session=session,
-                airtable_client=airtable_client,
-            )
-        append_history(session, "user", text_body)
-        timer.start("llm")
-        plan, close_after_reply = await resolve_turn_plan(
-            session=session,
-            user_text=text_body,
-            airtable_client=airtable_client,
-        )
-        reply_text, reply_source = await generate_ra1_reply_text(
+        await send_hybrid_text_reply(
             deps=deps,
-            client=sarvam_client,
-            session=session,
-            plan=plan,
+            meta_client=meta_client,
+            llm_client=groq_client,
+            airtable_client=airtable_client,
+            session=direct_session,
+            from_number=from_number,
+            user_text=text_body,
+            language_code=language_code,
+            timer=timer,
+            turn_id=turn_id,
+            message_id=message_id,
         )
-        timer.end("llm")
-        append_history(session, "assistant", reply_text)
-        timer.start("send")
-        await send_whatsapp_text(logger=deps.logger, client=meta_client, to=from_number, body=reply_text)
-        timer.end("send")
-        deps.logger.info("WA_LATENCY %s", timer.summary("text", reply_source, language_code))
-        if close_after_reply:
-            deps.session_store().clear(from_number)
         return
 
     if audio_id:
         reply_source = "audio"
+        conversation_result = None
+        final_sent = False
         try:
             timer.start("media_metadata")
             media_metadata = await fetch_whatsapp_media_metadata(client=meta_client, media_id=audio_id)
@@ -634,62 +634,70 @@ async def handle_whatsapp_message(*, deps: WhatsAppDeps, message: dict) -> None:
             timer.end("stt")
             deps.logger.info("WA_STT transcript=%r language=%s", transcript[:140], detected_language)
             language_code = detected_language
-            session.language_code = detected_language
-            if session.stage == "greet":
-                await prefetch_waitlist_identity(
-                    deps=deps,
-                    session=session,
-                    airtable_client=airtable_client,
-                )
-            append_history(session, "user", transcript)
 
-            timer.start("llm")
-            plan, close_after_reply = await resolve_turn_plan(
-                session=session,
-                user_text=transcript,
-                airtable_client=airtable_client,
-            )
-            reply_text, text_source = await generate_ra1_reply_text(
-                deps=deps,
-                client=sarvam_client,
-                session=session,
-                plan=plan,
-            )
-            timer.end("llm")
-            append_history(session, "assistant", reply_text)
-            reply_source = f"audio_{text_source}"
+            timer.start("conversation")
+            try:
+                conversation_result = await asyncio.wait_for(
+                    handle_direct_turn(
+                        logger=deps.logger,
+                        llm_client=groq_client,
+                        airtable_client=airtable_client,
+                        session=direct_session,
+                        user_text=transcript,
+                        language_code=detected_language,
+                    ),
+                    timeout=audio_conversation_timeout_seconds(),
+                )
+                reply_text = conversation_result.reply
+                reply_source = f"audio_{conversation_result.source}"
+            except asyncio.TimeoutError:
+                deps.logger.warning("Audio conversation timed out after STT transcript=%r", transcript[:140])
+                reply_text = AUDIO_REPLY_TIMEOUT
+                reply_source = "audio_timeout_fallback"
+            timer.end("conversation")
 
             try:
-                timer.start("tts")
-                tts_audio = await sarvam_synthesize_speech(
-                    client=sarvam_client,
-                    text=reply_text,
-                    language_code=detected_language,
-                )
-                timer.end("tts")
-                timer.start("media_upload")
-                media_id = await upload_whatsapp_media(
-                    logger=deps.logger,
-                    client=meta_client,
-                    filename="reply.mp3",
-                    content_type="audio/mpeg",
-                    media_bytes=tts_audio,
-                )
-                timer.end("media_upload")
-                timer.start("send")
-                await send_whatsapp_audio(
-                    logger=deps.logger,
-                    client=meta_client,
-                    to=from_number,
-                    media_id=media_id,
-                )
-                timer.end("send")
+                if reply_source == "audio_timeout_fallback":
+                    timer.start("send")
+                    final_sent = await safe_send_whatsapp_text(
+                        logger=deps.logger,
+                        client=meta_client,
+                        to=from_number,
+                        body=reply_text,
+                    )
+                    timer.end("send")
+                else:
+                    reply_text = prepare_voice_reply_text(reply_text)
+                    timer.start("tts")
+                    tts_audio = await sarvam_synthesize_speech(
+                        client=sarvam_client,
+                        text=reply_text,
+                        language_code=detected_language,
+                    )
+                    timer.end("tts")
+                    timer.start("media_upload")
+                    media_id = await upload_whatsapp_media(
+                        logger=deps.logger,
+                        client=meta_client,
+                        filename="reply.mp3",
+                        content_type="audio/mpeg",
+                        media_bytes=tts_audio,
+                    )
+                    timer.end("media_upload")
+                    timer.start("send")
+                    final_sent = await safe_send_whatsapp_audio(
+                        logger=deps.logger,
+                        client=meta_client,
+                        to=from_number,
+                        media_id=media_id,
+                    )
+                    timer.end("send")
             except Exception as exc:
                 timer.end("tts")
                 deps.logger.warning("TTS failed for WhatsApp message: %s", exc)
                 reply_source = f"{reply_source}_tts_fallback"
                 timer.start("send")
-                await send_whatsapp_text(
+                final_sent = await safe_send_whatsapp_text(
                     logger=deps.logger,
                     client=meta_client,
                     to=from_number,
@@ -701,24 +709,49 @@ async def handle_whatsapp_message(*, deps: WhatsAppDeps, message: dict) -> None:
             deps.logger.warning("STT/audio handling failed for WhatsApp message: %s", exc)
             reply_source = "audio_stt_fallback"
             timer.start("send")
-            await send_whatsapp_text(
+            final_sent = await safe_send_whatsapp_text(
                 logger=deps.logger,
                 client=meta_client,
                 to=from_number,
-                body=stt_fallback_message(session.language_code),
+                body=DIRECT_STT_FALLBACK,
             )
             timer.end("send")
 
-        deps.logger.info("WA_LATENCY %s", timer.summary("audio", reply_source, language_code))
-        if close_after_reply:
-            deps.session_store().clear(from_number)
+        deps.logger.info(
+            "WA_AGENT source=%s airtable_status=%s known_name=%s known_business_present=%s history_turns=%s turn_id=%s message_id=%s final_sent=%s",
+            reply_source,
+            conversation_result.airtable_status if conversation_result else "not_checked",
+            bool(getattr(direct_session, "name", "")),
+            bool(direct_session_business(direct_session)),
+            len(direct_session.history),
+            turn_id,
+            message_id,
+            final_sent,
+        )
+        deps.logger.info(
+            "WA_LATENCY %s",
+            {
+                **timer.summary("audio", reply_source, language_code),
+                "turn_id": turn_id,
+                "message_id": message_id,
+                "final_sent": final_sent,
+            },
+        )
         return
 
     reply_text = fallback_response("", language_code)
     timer.start("send")
-    await send_whatsapp_text(logger=deps.logger, client=meta_client, to=from_number, body=reply_text)
+    final_sent = await safe_send_whatsapp_text(logger=deps.logger, client=meta_client, to=from_number, body=reply_text)
     timer.end("send")
-    deps.logger.info("WA_LATENCY %s", timer.summary("unknown", "fallback", language_code))
+    deps.logger.info(
+        "WA_LATENCY %s",
+        {
+            **timer.summary("unknown", "fallback", language_code),
+            "turn_id": turn_id,
+            "message_id": message_id,
+            "final_sent": final_sent,
+        },
+    )
 
 
 def create_whatsapp_router(deps: WhatsAppDeps) -> APIRouter:

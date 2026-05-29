@@ -55,7 +55,7 @@ export default async function SetupSuccessPage({ searchParams }: SuccessPageProp
                 <p className="text-neutral-700">
                   For this demo, setup and initiation will happen only through our temporary test number that will be like{" "}
                   <span className="ml-1 inline-flex rounded-full border border-black/10 bg-[#f6f6f3] px-3 py-1 text-[16px] font-medium leading-7 tracking-[0.02em] text-neutral-950">
-                    {maskedTestNumber}
+                    +1 (555) *** - ****
                   </span>
                 </p>
               </div>
